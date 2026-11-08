@@ -56,7 +56,8 @@ SHOTS = [
 ]
 
 # shared geography used by several shots
-SUN_BED = (540.0, 1080.0)     # where the Sun sleeps during attempts 1-3
+SUN_BED = (540.0, 1080.0)
+BAND_Y = 1005.0                # where the painted dawn band sits in the sky     # where the Sun sleeps during attempts 1-3
 HORIZON_Y = 1280.0            # where the sun hides behind the city in wide shots
 CLOUD_TOP_Y = 1215.0          # the rim of the clock's cloud
 
@@ -99,7 +100,6 @@ def s02_morning_late(c: Canvas, t, lt, dur):
     with st.layer(0.12):
         wd.draw_sky(c, sky, glow_strength=0.5, glow_y=H * 0.80)
         wd.draw_stars(c, t, 0.85)
-        wd.draw_moon(c, 880, 260, 42, alpha=0.9)
 
     with st.layer(0.30):
         wd.draw_cloud_band(c, 1180, 1400, 240, rgba(sky.cloud, 0.5), None, 0,
@@ -108,10 +108,10 @@ def s02_morning_late(c: Canvas, t, lt, dur):
     # sleeping Sun, hidden lower and further back
     with st.layer(0.55):
         breath = 0.5 + 0.5 * math.sin(t * 1.05 - 0.6)
-        draw_sun(c, 540, 1420, s=0.62, eyes="shut", mouth="o",
-                 mouth_amt=0.28 + 0.2 * breath, rays=0.26, ray_alpha=0.45, glow=0.35,
-                 blanket=0.42, blanket_fill=sky.cloud, t=t)
-        wd.draw_snore_puffs(c, 700, 1420, t, 0.7, 0.8)
+        draw_sun(c, 540, 1300, s=0.70, eyes="shut", mouth="o",
+                 mouth_amt=0.28 + 0.2 * breath, rays=0.30, ray_alpha=0.5, glow=0.4,
+                 blanket=0.38, blanket_fill=sky.cloud, t=t)
+        wd.draw_snore_puffs(c, 690, 1300, t, 0.6, 0.8, spread=(140, 190))
 
     with st.layer(0.62):
         wd.draw_horizon_band(c, 1440, 180, [sky.horizon, sky.mid, sky.top], 0.9, 0.6)
@@ -171,8 +171,13 @@ def s02_morning_late(c: Canvas, t, lt, dur):
                    lobes=5)
 
 
-def _window_gag(c: Canvas, x, y, w, h, open_amt, lt):
-    """A city window: someone peeks out, sees the dark, closes up again."""
+def _window_gag(c: Canvas, x, y, w, h, open_amt, lt, greeting=False):
+    """A city window.
+
+    Default: someone peeks out, sees it is still dark, and closes up again.
+    greeting=True: the shutters open on a bright morning and a happy face
+    leans out (used in the morning montage).
+    """
     ink = hexa(pal.INK)
     frame = skia.Path()
     frame.addRRect(skia.RRect.MakeRectXY(
@@ -185,6 +190,8 @@ def _window_gag(c: Canvas, x, y, w, h, open_amt, lt):
     c.save()
     c.clip(inner)
     c.fill(inner, hexa("#0B1030"))
+    if greeting:
+        c.fill(inner, rgba("#FFDFA0", 1.0))
     if open_amt > 0.03:
         # warm sliver of room light + a peeking silhouette
         c.fill(ellipse_path(x, y + h * 0.1, w * 0.75, h * 0.7),
@@ -197,13 +204,26 @@ def _window_gag(c: Canvas, x, y, w, h, open_amt, lt):
             c.line(hx + math.cos(i * 1.7) * w * 0.16, hy + w * 0.2,
                    hx + math.cos(i * 1.7) * w * 0.3, hy + w * 0.34,
                    rgba("#150C2A", 0.95), 6)
-        # the eye that sees the dark
         c.save()
         c.clip(ellipse_path(hx, hy, w * 0.24, w * 0.24))
-        c.fill(ellipse_path(hx + w * 0.11, hy + w * 0.01, w * 0.055, w * 0.045),
-               hexa("#FFE7B4"))
-        c.fill(ellipse_path(hx + w * 0.13, hy + w * 0.01, w * 0.022, w * 0.032),
-               hexa("#2C1B3A"))
+        if greeting:
+            # a sunny room with a little plant on the sill
+            c.fill(ellipse_path(x, y - h * 0.2, w * 0.6, h * 0.5),
+                   rgba("#FFF0C8", 0.9))
+            pot_x = x + w * 0.18
+            c.fill(skia.Path().addRRect(skia.RRect.MakeRectXY(
+                skia.Rect.MakeXYWH(pot_x - w * 0.09, y + h * 0.16, w * 0.18, h * 0.16),
+                3, 3)), hexa("#C97A5A"))
+            for k in (-1, 0, 1):
+                c.stroke(ellipse_path(pot_x + k * w * 0.06, y + h * 0.10,
+                                      w * 0.05, h * 0.09),
+                         hexa("#4E9A5A"), w * 0.035)
+        else:
+            # the eye that sees the dark
+            c.fill(ellipse_path(hx + w * 0.11, hy + w * 0.01, w * 0.055, w * 0.045),
+                   hexa("#FFE7B4"))
+            c.fill(ellipse_path(hx + w * 0.13, hy + w * 0.01, w * 0.022, w * 0.032),
+                   hexa("#2C1B3A"))
         c.restore()
     c.restore()
     # curtains (two panels)
@@ -245,9 +265,11 @@ def s03_attempt_ring(c: Canvas, t, lt, dur):
         wd.draw_sky(c, sky, glow_strength=0.45, glow_y=H * 0.86)
         wd.draw_stars(c, t, 0.75)
 
-    with st.layer(0.28):
-        wd.draw_cloud_band(c, 300, 1200, 240, rgba(sky.cloud, 0.38), None, 0,
-                           seed=81, lobes=7, drift=math.sin(t * 0.2) * 16)
+    with st.layer(0.26):
+        wd.draw_cloud_band(c, 250, 900, 190, rgba(sky.cloud, 0.34), None, 0,
+                           seed=81, lobes=6, drift=math.sin(t * 0.2) * 16, x=300)
+        wd.draw_cloud_band(c, 430, 700, 150, rgba(sky.cloud, 0.26), None, 0,
+                           seed=82, lobes=5, drift=math.cos(t * 0.24) * 14, x=850)
 
     # ---- the Sun's cloud bed --------------------------------------------
     bed_y = 1330.0
@@ -430,7 +452,7 @@ def s04_dance(c: Canvas, t, lt, dur):
         smile = seg(lt, 3.4, 4.6)
         eyes = "shut" if lt < 4.6 else "happy"
         mouth = "o" if lt < 3.4 else ("grin" if lt < 5.0 else "smile")
-        draw_sun(c, 590, 1150, s=0.96, rot=3.0, eyes=eyes, mouth=mouth,
+        draw_sun(c, 690, 1130, s=0.96, rot=3.0, eyes=eyes, mouth=mouth,
                  mouth_amt=0.25 + 0.2 * breath, rays=0.5,
                  ray_wobble=t * 3.4, ray_alpha=0.6, glow=0.35,
                  blanket=0.30 + 0.08 * breath, blanket_fill=sky.cloud, t=t,
@@ -438,12 +460,13 @@ def s04_dance(c: Canvas, t, lt, dur):
 
     # birds bobbing in their sleep along the roofline
     bopping = seg(lt, 4.5, 6.0)
-    with st.layer(0.98):
-        for i, (bx, by, sc) in enumerate(((120, 1420, 0.62), (930, 1400, 0.58),
-                                          (300, 1330, 0.42), (760, 1310, 0.4))):
+    with st.layer(0.96):
+        for i, (bx, by, sc) in enumerate(((150, 1428, 0.72), (900, 1420, 0.68),
+                                          (330, 1400, 0.52), (1010, 1436, 0.5))):
             bph2 = (lt * beat + i * 0.17) % 1.0
-            bob = math.sin(bph2 * math.tau) * 8 * bopping
-            draw_bird(c, bx, by + bob, s=sc, awake=0.0, bob=bob * 0.06)
+            bob = math.sin(bph2 * math.tau) * 9 * bopping
+            draw_bird(c, bx, by + bob, s=sc, awake=0.0, bob=bob * 0.06,
+                      color="#6F86C4")
 
     # ---- the clock's dance ----------------------------------------------
     dx, dy, rot, sy, feet, phase, arm = _dance_pose(lt)
@@ -454,7 +477,7 @@ def s04_dance(c: Canvas, t, lt, dur):
         eyes = "squeeze"
         mouth = "flat" if lt < 9.2 else "pant"
     with st.layer(1.0, boil=0.6):
-        draw_clock(c, dx, dy, s=0.70, rot=rot, eyes=eyes, look=(0.15, 0.35),
+        draw_clock(c, dx, dy, s=0.82, rot=rot, eyes=eyes, look=(0.15, 0.35),
                    mouth=mouth, mouth_amt=0.75, bells=ring, t=t,
                    hand_angle=(30, 200), feet=feet, feet_phase=phase,
                    arm=arm, arm_bend=0.5 + 0.4 * math.sin(lt * 5.0), arm_len=120,
@@ -476,7 +499,7 @@ def s04_dance(c: Canvas, t, lt, dur):
 
 def _dance_pose(lt):
     """March, jump, spin, wave. Returns (x, y, rot, squash, feet, phase, arm)."""
-    x, y = 430.0, 1120.0
+    x, y = 300.0, 1130.0
     beat = 2.1
     phase = (lt * beat) % 1.0
     rot = -4.0
@@ -502,7 +525,7 @@ def _dance_pose(lt):
     # 4.6-6.8 spin
     elif lt < 6.8:
         u = (lt - 4.6) / 2.2
-        x = 430 + math.sin(u * math.pi * 4) * 60
+        x = 300 + math.sin(u * math.pi * 4) * 70
         y = 1120 - abs(math.sin(u * math.pi * 8)) * 40
         rot = -4 + u * 720
         feet = "walk"
@@ -553,8 +576,8 @@ def s05_feather(c: Canvas, t, lt, dur):
     sxs = 1.0 - 0.05 * inhale
     sys = 1.0 + 0.10 * inhale
     with st.layer(0.92, boil=0.6):
-        draw_sun(c, 600, 1180, s=0.98, eyes="shut", mouth="o" if lt < 9.2 else "o",
-                 mouth_amt=0.2 + 0.5 * inhale, rays=0.55 + 0.1 * inhale,
+        draw_sun(c, 640, 1180, s=1.0, eyes="shut", mouth="o",
+                 mouth_amt=0.10 + 0.45 * inhale, rays=0.55 + 0.1 * inhale,
                  ray_wobble=t * 1.6, ray_alpha=0.6, glow=0.35,
                  blanket=0.22, blanket_fill=sky.cloud,
                  nostril=0.3 * twitch + 1.1 * danger, nose_twitch=twitch + inhale,
@@ -563,7 +586,7 @@ def s05_feather(c: Canvas, t, lt, dur):
     # the feather
     fx, fy, frot = _feather_pose(lt, t)
     with st.layer(1.02, boil=0.5):
-        draw_feather(c, fx, fy, s=0.62, rot=frot, wave=math.sin(t * 2.2))
+        draw_feather(c, fx, fy, s=1.15, rot=frot, wave=math.sin(t * 2.2))
     # sparkles while it tickles
     if twitch > 0:
         with st.layer(1.02):
@@ -579,11 +602,11 @@ def s05_feather(c: Canvas, t, lt, dur):
         eyes = "wide"
     mouth = "smile" if back < 0.3 else "o"
     with st.layer(1.0, boil=0.6):
-        draw_clock(c, cx, cy, s=0.58, rot=-6 + 3 * math.sin(t * 1.3), eyes=eyes,
+        draw_clock(c, cx, cy, s=0.68, rot=-6 + 3 * math.sin(t * 1.3), eyes=eyes,
                    look=(0.55 if back < 0.3 else -0.6, 0.2),
                    mouth=mouth, mouth_amt=0.8, bells=0.12, t=t,
                    hand_angle=(150, 210), feet="walk", feet_phase=lt * 1.6,
-                   arm=0.9 if back < 0.35 else 0.3, arm_len=110,
+                   arm=0.9 if back < 0.35 else 0.3, arm_len=120,
                    arm_bend=-0.3 if back < 0.35 else 0.6,
                    sweat=back,
                    sx=1 + 0.06 * seg(lt, 8.6, 9.6) * (1 - seg(lt, 10.0, 10.6)))
@@ -608,20 +631,19 @@ def _feather_pose(lt, t):
     # then sticks to the nose
     if lt < 3.4:
         u = seg(lt, 0.4, 3.4, False, False)
-        x = lerp(880, 640, u) + math.sin(u * 6.0) * 30
-        y = lerp(380, 900, u)
+        x = lerp(880, 560, u) + math.sin(u * 6.0) * 34
+        y = lerp(360, 1130, u)
         rot = 40 + math.sin(t * 1.6) * 40
     elif lt < 8.2:
-        # follows the clock's hand around the nose
-        u = (lt - 3.4)
-        x = 560 + math.sin(t * 4.2) * 26
-        y = 1195 + 4 * math.sin(t * 5.6)
-        rot = 20 + math.sin(t * 3.0) * 18
+        # follows the clock's hand, right at the Sun's nose
+        x = 588 + math.sin(t * 4.2) * 22
+        y = 1178 + 6 * math.sin(t * 5.6)
+        rot = 62 + math.sin(t * 3.0) * 16
     else:
         u = seg(lt, 8.2, 9.6)
-        x = lerp(560, 606, u)
-        y = lerp(1195, 1152, u)
-        rot = lerp(20, -12, u)
+        x = lerp(588, 640, u)
+        y = lerp(1178, 1150, u)
+        rot = lerp(62, 96, u)
     return x, y, rot
 
 
@@ -629,22 +651,22 @@ def _clock_pose_feather(lt):
     """Clock creeps in from the left, then backs off in fear."""
     if lt < 2.6:
         u = seg(lt, 0.4, 2.6)
-        x = lerp(120, 330, u)
-        y = lerp(1320, 1210, u)
+        x = lerp(175, 310, u)
+        y = lerp(1330, 1230, u)
         back = 0.0
     elif lt < 8.0:
-        x = 330 + math.sin(lt * 2.0) * 8
-        y = 1210
+        x = 300 + math.sin(lt * 2.0) * 8
+        y = 1230
         back = 0.0
     elif lt < 9.6:
         u = seg(lt, 8.0, 9.6)
-        x = lerp(330, 290, u)
-        y = 1210
+        x = lerp(300, 260, u)
+        y = 1230
         back = 0.4 * u
     else:
         u = seg(lt, 9.6, 11.6, False, True)
-        x = lerp(290, 120, u)
-        y = lerp(1210, 1290, u)
+        x = lerp(260, 110, u)
+        y = lerp(1230, 1310, u)
         back = 0.4 + 0.6 * u
     return x, y, back
 
@@ -885,34 +907,41 @@ def s08_plan(c: Canvas, t, lt, dur):
             wd.draw_cloud_band(c, cy, w0, h0, rgba(sky.cloud, 0.28), None, 0,
                                seed=sd, lobes=6, x=cx + math.sin(t * 0.2 + i) * 14)
 
-    # the city, dusk-lit
-    with st.layer(0.72):
-        wd.draw_city_far(c, 1420, mix(pal.CITY_FAR, "#7A5A86", 0.35),
-                         window_alpha=0.25, t=t)
-    with st.layer(0.86):
-        wd.draw_city_mid(c, 1560, mix(pal.CITY_MID, "#6A4A78", 0.3), pal.INK,
-                         window_alpha=0.4, t=t)
-    with st.layer(0.98):
-        wd.draw_city_near(c, 1960, mix(pal.CITY_NEAR, "#5A3A6A", 0.25), pal.INK)
-
-    # ---- the painted ribbon of dawn --------------------------------------
-    horizon_y = 1360.0
+    # ---- the painted ribbon of dawn (in the sky, above the rooftops) -----
+    horizon_y = BAND_Y
     trail = _ribbon_trail(lt)
     if len(trail) > 1:
-        with st.layer(0.55):
-            c.save()
-            # soft glow under the ribbon
-            wd.draw_ribbon(c, trail, 210,
-                           [rgba("#FFB07A", 0.55), rgba("#FF9EC4", 0.55)], 1.0, True)
-            c.restore()
-        with st.layer(0.62):
-            for off, cols, wid, a in ((0, ["#FFD9A0", "#FFC89A"], 120, 0.95),
-                                      (46, ["#FFB3C6", "#FF9EC4"], 92, 0.9),
-                                      (-40, ["#FFC46B", "#FFE0A0"], 78, 0.9)):
-                pts = [(x, y + off) for x, y in trail]
+        # soft glow bleeding off the paint
+        with st.layer(0.42):
+            u = seg(lt, 3.0, 11.0, False, False)
+            # the paint bleeds up into the sky: peach near the horizon, rose above
+            vp = skia.Paint(AntiAlias=True)
+            vp.setShader(skia.GradientShader.MakeLinear(
+                [skia.Point(0, horizon_y - 700), skia.Point(0, horizon_y + 90)],
+                [rgba("#FF9EC4", 0.0), rgba("#FF9EC4", 0.34 * u),
+                 rgba("#FFB98C", 0.52 * u), rgba("#FFD9A0", 0.72 * u),
+                 rgba("#FFE4B4", 0.86 * u)],
+                [0.0, 0.42, 0.68, 0.88, 1.0]))
+            c.c.drawRect(skia.Rect.MakeLTRB(-900, horizon_y - 700, W + 900,
+                                            horizon_y + 90), vp)
+            gp = skia.Paint(AntiAlias=True)
+            gp.setShader(skia.GradientShader.MakeLinear(
+                [skia.Point(-100, 0), skia.Point(W + 100, 0)],
+                [rgba("#FFB07A", 0.0), rgba("#FFB07A", 0.62 * u),
+                 rgba("#FF9EC4", 0.45 * u), rgba("#FF9EC4", 0.0)],
+                [0.0, 0.25, 0.7, 1.0]))
+            gp.setMaskFilter(skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, 46))
+            c.c.drawRect(skia.Rect.MakeLTRB(-900, horizon_y - 300, W + 900,
+                                            horizon_y + 90), gp)
+        # the band itself: three ribbons of peach / pink / gold
+        with st.layer(0.46):
+            for off, cols, wid, a in ((0, ["#FFD9A0", "#FFC178", "#FFE0A0"], 215, 0.97),
+                                      (78, ["#FF9EC4", "#FFB3C6", "#FF9EC4"], 150, 0.90),
+                                      (-72, ["#FFF0C0", "#FFE0A0"], 112, 0.85)):
+                pts = [(x, y + off * 0.55) for x, y in trail]
                 wd.draw_ribbon(c, pts, wid, cols, a, True)
-            # leading brush
-            if lt < 11.4:
+            # the brush nib at the leading edge
+            if lt < 11.4 and trail:
                 bx, by = trail[-1]
                 for i in range(6):
                     a = t * 3.0 + i * 1.05
@@ -920,19 +949,40 @@ def s08_plan(c: Canvas, t, lt, dur):
                               by + math.sin(a) * (14 + i * 5), 7 + 2 * math.sin(a * 2),
                               "#FFF3C4", 0.9, rot=a)
 
-    # the whole horizon glows as it finishes
-    if paint > 0.7:
-        with st.layer(0.5):
-            wd.draw_horizon_band(c, horizon_y, 200,
-                                 ["#FF9E7A", "#FFC178", "#FFF0C0"],
-                                 seg(lt, 9.4, 12.0), 1.4)
+    # the ribbon coil still inside the clock during the unwinding beat
+    if lt < 3.6:
+        with st.layer(0.99):
+            cx0, cy0, _, _ = _ribbon_runner(lt, trail, horizon_y)
+            grow = seg(lt, 0.4, 3.0)
+            for i in range(5):
+                a = i * 1.9 + t * 1.2
+                rr = 46 + i * 13 * (0.4 + grow)
+                c.stroke(ellipse_path(cx0 + 30 + math.cos(a) * 20,
+                                      cy0 + 26 + math.sin(a) * 14,
+                                      rr, rr * 0.42),
+                         rgba(["#FFC178", "#FF9EC4", "#FFD9A0"][i % 3], 0.85 - i * 0.1),
+                         7 - i * 0.6)
+
+    # the city, dusk-lit
+    with st.layer(0.72):
+        wd.draw_city_far(c, 1420, mix(pal.CITY_FAR, "#8A6A94", 0.45),
+                         window_alpha=0.25, t=t)
+    with st.layer(0.86):
+        wd.draw_city_mid(c, 1560, mix(pal.CITY_MID, "#7A5A86", 0.42), pal.INK,
+                         window_alpha=0.4, t=t)
+    with st.layer(0.98):
+        wd.draw_city_near(c, 1960, mix(pal.CITY_NEAR, "#6A4A7A", 0.35), pal.INK)
+
+    # the whole horizon glows as the paint spreads
+    with st.layer(0.3):
+        wd.draw_warm_wash(c, paint * paint, ("#FF9E7A", "#FFD9A0"), 0.40)
 
     # ---- the Sun (asleep on the right, then touched by colour) -----------
     wake = seg(lt, 12.4, 14.2)
     with st.layer(0.9, boil=0.5):
         breath = 0.5 + 0.5 * math.sin(t * 1.0)
-        draw_sun(c, 760, 1000 + (SUN_BED[1] - 1000) * seg(lt, 0, 3.0) * 0.0,
-                 s=0.86, eyes="shut" if wake < 0.4 else "open",
+        draw_sun(c, 820, 800, s=0.82, rot=-6,
+                 eyes="shut" if wake < 0.4 else "open",
                  eye_open=max(0.0, (wake - 0.4) / 0.6),
                  look=(-0.4, -0.2), mouth="o" if wake < 0.6 else "smile",
                  mouth_amt=0.3 + 0.2 * breath, rays=0.42 + 0.2 * wake,
@@ -980,24 +1030,25 @@ def _ribbon_trail(lt):
     for i in range(n):
         f = i / (n - 1)
         x = -80 + (xs + 80) * f
-        bob = math.sin(f * 7.0 + 0.6) * 22 + math.sin(f * 3.1) * 14
-        y = 1330 + bob
+        bob = math.sin(f * 6.0 + 0.6) * 13 + math.sin(f * 2.7) * 8
+        y = BAND_Y + bob
         pts.append((x, y))
     return pts
 
 
 def _ribbon_runner(lt, trail, horizon_y):
+    """The clock unwinds the ribbon at frame-left, then races it across."""
     if lt < 3.0:
-        # unwinds the ribbon from its body
         u = seg(lt, 0.4, 3.0)
-        return (lerp(830, 780, u), lerp(1120, 1200, u), -4, u)
+        return (lerp(320, 210, u), BAND_Y + 150 + math.sin(u * 4) * 6,
+                -4 + 8 * math.sin(u * 6), u)
     if lt < 11.2:
         u = seg(lt, 3.0, 11.0, False, False)
         x = -40 + u * (W + 80)
-        y = 1250 + math.sin(u * 12.0) * 16
+        y = BAND_Y + 96 + math.sin(u * 9.0) * 10
         return (x, y, -6 + math.sin(u * 24) * 4, u)
     u = seg(lt, 11.2, 13.4, False, True)
-    return (lerp(940, 700, u), lerp(1250, 1210, u), -4, 1.0)
+    return (lerp(960, 700, u), lerp(BAND_Y + 130, BAND_Y + 70, u), -4, 1.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -1015,10 +1066,11 @@ def s09_sunrise(c: Canvas, t, lt, dur):
                     warm=rise)
         wd.draw_stars(c, t, 0.2 * (1 - rise))
 
-    # the painted band still on the horizon
+    # the painted band still on the horizon + morning light flooding in
     with st.layer(0.2):
-        wd.draw_horizon_band(c, 1400 - 120 * rise, 240,
-                             ["#FF9E7A", "#FFC178", "#FFE9BE"], 0.9, 1.3)
+        wd.draw_horizon_band(c, 1420 - 120 * rise, 260,
+                             ["#FF9E7A", "#FFC178", "#FFE9BE"], 0.85, 1.2)
+        wd.draw_warm_wash(c, 0.30 + 0.70 * rise, ("#FFC178", "#FFE9BE"), 0.26)
 
     with st.layer(0.3):
         wd.draw_cloud_band(c, 470, 1200, 210, rgba(sky.cloud, 0.45), None, 0, seed=241,
@@ -1036,7 +1088,7 @@ def s09_sunrise(c: Canvas, t, lt, dur):
                           pal.INK)
 
     # the Sun: eye opens, sits up, rises above the horizon
-    sun_y = lerp(1210, 640, rise)
+    sun_y = lerp(1215, 620, rise)
     sun_s = lerp(0.92, 1.0, rise)
     eye = seg(lt, 1.6, 3.0)
     look = (-0.55 + 0.5 * seg(lt, 3.4, 5.0), -0.1)
@@ -1046,9 +1098,7 @@ def s09_sunrise(c: Canvas, t, lt, dur):
                  mouth="small" if lt < 2.6 else ("smile" if lt < 5.6 else "grin"),
                  mouth_amt=0.4, rays=0.5 + 0.6 * rise, ray_wobble=t * 1.2 + rise * 3,
                  ray_alpha=0.7 + 0.3 * rise, glow=0.3 + 0.7 * rise,
-                 blanket=0.22 * (1 - seg(lt, 2.2, 4.4)),
-                 blanket_fill=sky.cloud, t=t, blush_extra=0.5 * rise,
-                 cheeks=1.0)
+                 t=t, blush_extra=0.5 * rise, cheeks=1.0)
 
     # beam of light flooding the city
     if rise > 0.1:
@@ -1062,12 +1112,13 @@ def s09_sunrise(c: Canvas, t, lt, dur):
             p.setBlendMode(skia.BlendMode.kScreen)
             c.c.drawPaint(p)
 
-    # the clock: proud, tired bow
+    # the clock: proud, tired bow. It drifts left and down out of the Sun's
+    # way as the Sun climbs past it, so nothing covers the Sun's face.
     bow = math.sin(clamp(seg(lt, 6.4, 8.4)) * math.pi)
-    cx = lerp(300, 330, seg(lt, 0.0, 2.0))
-    cy = lerp(1010, 980, seg(lt, 0.0, 2.0))
+    cx = lerp(300, 190, rise)
+    cy = lerp(1010, 880, rise) + 10 * seg(lt, 6.4, 7.4)
     with st.layer(1.0, boil=0.6):
-        draw_cloud(c, cx, cy + 110, 420, 150, rgba(sky.cloud, 0.95), None, 3, seed=251,
+        draw_cloud(c, cx, cy + 100, 400, 145, rgba(sky.cloud, 0.95), None, 3, seed=251,
                    lobes=5)
         draw_clock(c, cx, cy, s=0.56, rot=-4 + 22 * bow,
                    eyes="happy" if lt > 6.2 else "sleepy",
@@ -1083,7 +1134,7 @@ def s09_sunrise(c: Canvas, t, lt, dur):
         bx = lerp(-120, W + 140, u)
         by = 1450 - math.sin(u * math.pi) * 300 + math.sin(u * 9) * 12
         with st.layer(1.0):
-            draw_bird(c, bx, by, s=0.72, awake=1.0, flap=math.sin(u * 40) * 26,
+            draw_bird(c, bx, by, s=1.05, awake=1.0, flap=math.sin(u * 40) * 26,
                   look=(0.6, 0.0))
 
     with st.layer(1.14):
@@ -1156,38 +1207,49 @@ def _morning_windows(c, st, t, lt, sky, push):
                          window_alpha=0.55, t=t, window_color="#FFD98A")
     with st.layer(1.0):
         wd.draw_city_near(c, 1980, mix(pal.CITY_NEAR, "#6288C0", 0.72), pal.INK)
-        # three windows popping open, staggered
-        for i, (wx, wy, ww, hh) in enumerate(((200, 1500, 120, 150),
-                                              (540, 1560, 140, 170),
-                                              (880, 1480, 120, 140))):
-            o = seg(lt, 0.25 + i * 0.35, 0.75 + i * 0.35)
+        # three windows popping open on the beat
+        for i, (wx, wy, ww, hh) in enumerate(((210, 1560, 150, 190),
+                                              (545, 1620, 170, 210),
+                                              (880, 1540, 150, 180))):
+            o = seg(lt, 0.20 + i * 0.32, 0.55 + i * 0.32)
             if o > 0:
-                _window_gag(c, wx, wy, ww, hh, 1.0 - o * 0.15, lt)
+                _window_gag(c, wx, wy, ww, hh, o, lt, greeting=True)
                 # warm spill from the opening window
-                c.stroke(ellipse_path(wx, wy, ww * (0.6 + 0.4 * o), hh * (0.5 + 0.3 * o)),
-                         rgba("#FFF3C4", (1 - o) * 0.4 + 0.12), 4)
+                c.stroke(ellipse_path(wx, wy, ww * (0.62 + 0.5 * o), hh * (0.55 + 0.4 * o)),
+                         rgba("#FFF3C4", (1 - o) * 0.45 + 0.10), 4)
 
 
 def _morning_flowers(c, st, t, lt, sky, push):
     _morning_sky(c, st, t, sky)
-    with st.layer(0.8):
-        # a sunny rooftop garden strip
-        roof = skia.Path()
-        roof.addRect(skia.Rect.MakeLTRB(-40, 1500, W + 40, 2100))
-        c.shape(roof, mix("#4A6EA8", "#7FA0CC", 0.5), pal.INK, 5)
-        c.fill(skia.Path().addRect(skia.Rect.MakeLTRB(-40, 1500, W + 40, 1560)),
-               rgba("#9CC0E4", 0.5)) if False else None
-        for i in range(5):
-            fx = 120 + i * 210
-            bloom = seg(lt, 0.15 * i, 0.8 + 0.15 * i)
+    with st.layer(0.7):
+        wd.draw_city_far(c, 1320, mix(pal.CITY_FAR, "#9AC0EA", 0.85), window_alpha=0.1, t=t)
+    with st.layer(0.9):
+        wd.draw_city_mid(c, 1480, mix(pal.CITY_MID, "#7AA4D6", 0.8), pal.INK,
+                         window_alpha=0.35, t=t)
+        draw_sun(c, 860, 380, s=0.72, eyes="happy", mouth="grin", mouth_amt=0.8,
+                 rays=0.9, ray_wobble=t * 2.6, glow=0.7, t=t)
+    with st.layer(1.04):
+        # big rooftop flower boxes
+        for b in range(2):
+            bx = -40 + b * 560
+            box = skia.Path()
+            box.addRRect(skia.RRect.MakeRectXY(
+                skia.Rect.MakeXYWH(bx, 1560, 580, 420), 18, 18))
+            c.shape(box, mix("#B06A5E", "#D89280", 0.5), pal.INK, 5)
+            c.fill(skia.Path().addRRect(skia.RRect.MakeRectXY(
+                skia.Rect.MakeXYWH(bx + 16, 1576, 548, 54), 10, 10)),
+                rgba("#8A4A44", 0.55))
+        for i in range(6):
+            fx = 90 + i * 180
+            bloom = seg(lt, 0.10 * i, 0.65 + 0.10 * i)
             if bloom > 0:
-                draw_flower_local(c, fx, 1495, 1.5 + 0.2 * (i % 2), bloom,
-                                  -0.1 + 0.05 * i,
-                                  ["#FF9EC4", "#FFB86B", "#FFE07A", "#FF97B8",
-                                   "#FFC46B"][i], t)
-    with st.layer(1.05):
+                wd.draw_flower(c, fx, 1566, 2.5 + 0.35 * (i % 2), bloom,
+                               -0.12 + 0.05 * i,
+                               ["#FF9EC4", "#FFB86B", "#FFE07A", "#FF97B8",
+                                "#FFC46B", "#FF9EC4"][i], t)
+    with st.layer(1.08):
         u = seg(lt, 0.2, 2.4, False, False)
-        draw_bird(c, lerp(W + 100, -140, u), 900 - math.sin(u * math.pi) * 140, s=0.5,
+        draw_bird(c, lerp(W + 100, -140, u), 900 - math.sin(u * math.pi) * 140, s=0.75,
                   awake=1.0, flap=math.sin(u * 26) * 22, look=(-0.6, 0))
 
 
@@ -1268,10 +1330,20 @@ def s11_timelapse(c: Canvas, t, lt, dur):
 
     # sweeping clouds for speed
     with st.layer(0.24):
-        for i, (cy2, sd) in enumerate(((400, 291), (620, 301), (300, 311))):
-            wd.draw_cloud_band(c, cy2, 700, 150, rgba("#FFFFFF", 0.55 - i * 0.1), None, 0,
+        for i, (cy2, sd) in enumerate(((360, 291), (560, 301), (280, 311), (700, 321))):
+            wd.draw_cloud_band(c, cy2, 760, 160, rgba("#FFFFFF", 0.5 - i * 0.09), None, 0,
                                seed=sd, lobes=5,
-                               drift=-((t * 220 + i * 300) % (W + 800)) + W / 2)
+                               drift=-((t * 340 + i * 260) % (W + 900)) + W / 2)
+    # light sweeps across the rooftops as the sun travels
+    with st.layer(0.6):
+        sweep = ((lt * 0.55) % 1.4) - 0.2
+        gp = skia.Paint(AntiAlias=True)
+        gp.setShader(skia.GradientShader.MakeLinear(
+            [skia.Point(sweep * W - 200, 0), skia.Point(sweep * W + 260, 0)],
+            [rgba("#FFE9B8", 0.0), rgba("#FFE9B8", 0.30), rgba("#FFE9B8", 0.0)],
+            [0.0, 0.5, 1.0]))
+        gp.setBlendMode(skia.BlendMode.kScreen)
+        c.c.drawRect(skia.Rect.MakeLTRB(0, 900, W, H), gp)
 
     # the sun sweeps across and sinks
     with st.layer(0.88, boil=0.4):
@@ -1327,6 +1399,17 @@ def s12_loop(c: Canvas, t, lt, dur):
     blend = seg_io(lt, 0.0, 1.6)
     st.zoom = lerp(1.02, 1.0, blend)
     st.pan = (0.0, lerp(-14, 0, blend))
-    # ring starts again
+    # ring starts again, the clock snoozes itself, and the film settles back
+    # onto the exact opening composition so it loops without a cut
     tableau(c, st, lt, sky_key="nightfall", toward="midnight", amount=blend,
             ring_at=1.05, hit_at=3.25)
+    # a slow final settle that lands on the opening frame just as the music
+    # rings its last note, so the loop reads as "and again" rather than a cut
+    settle = seg_io(lt, 2.95, 4.45) ** 1.6
+    if settle > 0.001:
+        c.save()
+        c.alpha_layer(settle)
+        st0 = Stage(c, 0.0)
+        st0.set_cam(pan=(0.0, 0.0), zoom=1.0)
+        tableau(c, st0, 0.0, sky_key="midnight", ring_at=0.42, hit_at=2.42)
+        c.restore()

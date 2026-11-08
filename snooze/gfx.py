@@ -45,10 +45,20 @@ def rgba(s, a: float) -> skia.Color:
     return skia.Color(r, g, b, int(max(0.0, min(1.0, a)) * 255))
 
 
-def mix(c1: str, c2: str, t: float) -> skia.Color:
-    """Blend two hex colours (sRGB space, good enough for stylised art)."""
+def _co(v) -> skia.Color:
+    return hexa(v) if isinstance(v, str) else v
+
+
+def to_hex(c) -> str:
+    """Packed skia colour -> '#rrggbb' so colours can be re-mixed."""
+    r, g, b = rgb_of(c)
+    return "#%02X%02X%02X" % (r, g, b)
+
+
+def mix(c1, c2, t: float) -> skia.Color:
+    """Blend two colours (sRGB space, good enough for stylised art)."""
     t = max(0.0, min(1.0, t))
-    a, b = hexa(c1), hexa(c2)
+    a, b = _co(c1), _co(c2)
     A = rgb_of(a) + (skia.ColorGetA(a),)
     B = rgb_of(b) + (skia.ColorGetA(b),)
     return skia.Color(*(round(A[i] + (B[i] - A[i]) * t) for i in range(4)))
@@ -62,17 +72,6 @@ def mixa(c1: str, c2: str, t: float, alpha: float) -> skia.Color:
 def with_alpha(c, a: float) -> skia.Color:
     r, g, b = rgb_of(c)
     return skia.Color(r, g, b, int(max(0.0, min(1.0, a)) * 255))
-
-
-def col(v):
-    """Accept '#rrggbb', (r,g,b[,a]) or a packed skia colour."""
-    if isinstance(v, str):
-        return hexa(v)
-    if isinstance(v, (tuple, list)):
-        if len(v) == 3:
-            return skia.Color(int(v[0]), int(v[1]), int(v[2]))
-        return skia.Color(int(v[0]), int(v[1]), int(v[2]), int(v[3]))
-    return v
 
 
 # --------------------------------------------------------------------------- #
@@ -180,13 +179,26 @@ def rect_path(x: float, y: float, w: float, h: float, r: float = 0.0) -> skia.Pa
 # --------------------------------------------------------------------------- #
 # paint helpers
 # --------------------------------------------------------------------------- #
-def fill_paint(color: skia.Color) -> skia.Paint:
+def col(v):
+    """Accept '#rrggbb', (r,g,b[,a]) or a packed skia colour."""
+    if isinstance(v, str):
+        return hexa(v)
+    if isinstance(v, (tuple, list)):
+        if len(v) == 3:
+            return skia.Color(int(v[0]), int(v[1]), int(v[2]))
+        return skia.Color(int(v[0]), int(v[1]), int(v[2]), int(v[3]))
+    return v
+
+
+def fill_paint(color) -> skia.Paint:
+    color = col(color)
     p = skia.Paint(AntiAlias=True, Color=color, Style=skia.Paint.kFill_Style)
     return p
 
 
-def stroke_paint(color: skia.Color, width: float, cap=skia.Paint.kRound_Cap,
+def stroke_paint(color, width: float, cap=skia.Paint.kRound_Cap,
                  join=skia.Paint.kRound_Join) -> skia.Paint:
+    color = col(color)
     p = skia.Paint(AntiAlias=True, Color=color, Style=skia.Paint.kStroke_Style,
                    StrokeWidth=float(width), StrokeCap=cap, StrokeJoin=join)
     return p
@@ -207,7 +219,8 @@ def rad_shader(cx, cy, r, colors: Sequence[skia.Color], pos: Sequence[float] = N
         skia.Point(float(cx), float(cy)), float(r), list(colors), list(pos))
 
 
-def blur_paint(color: skia.Color, sigma: float, style=skia.Paint.kFill_Style) -> skia.Paint:
+def blur_paint(color, sigma: float, style=skia.Paint.kFill_Style) -> skia.Paint:
+    color = col(color)
     p = skia.Paint(AntiAlias=True, Color=color, Style=style)
     if sigma > 0.01:
         p.setMaskFilter(skia.MaskFilter.MakeBlur(skia.kNormal_BlurStyle, float(sigma)))
@@ -479,6 +492,37 @@ def vignette(canvas: Canvas, strength=0.30, color=(8, 10, 26)):
     canvas.c.drawRect(skia.Rect.MakeWH(W, H), p)
 
 
+# Skia on this build uses BGRA_8888 as its native N32 format:
+#   Image.toarray()      -> BGRA byte order
+#   Image.fromarray(...) -> expects BGRA byte order
+# So the canonical numpy buffer in this project is BGRA, converted to RGB only
+# when it has to leave skia (PIL, ffmpeg, the review sheets).
+def to_bgra(img: skia.Image) -> np.ndarray:
+    return np.ascontiguousarray(img.toarray())
+
+
+def from_bgra(arr: np.ndarray) -> skia.Image:
+    return skia.Image.fromarray(np.ascontiguousarray(arr),
+                                colorType=skia.kRGBA_8888_ColorType)
+
+
+def bgra_to_rgba(arr: np.ndarray) -> np.ndarray:
+    return np.ascontiguousarray(arr[:, :, [2, 1, 0, 3]])
+
+
+def image_from_rgba(arr_rgba: np.ndarray) -> skia.Image:
+    """Build a skia Image from an RGBA buffer with correct colours."""
+    return skia.Image.fromarray(np.ascontiguousarray(arr_rgba[:, :, [2, 1, 0, 3]]),
+                                colorType=skia.kRGBA_8888_ColorType)
+
+
+def save_frame(arr_bgra: np.ndarray, path: str):
+    """Save a raw skia buffer (toarray() output, BGRA order) as a correct PNG."""
+    from PIL import Image
+    Image.fromarray(np.ascontiguousarray(arr_bgra[:, :, [2, 1, 0]])).save(path)
+    return path
+
+
 def render_canvas_ss(ss: int = 2):
     """Create a supersampled surface + wrapped canvas."""
     surf = skia.Surface(W * ss, H * ss)
@@ -492,8 +536,54 @@ def downsample(surf: skia.Surface, ss: int) -> np.ndarray:
     if ss != 1:
         img = img.resize(W, H, skia.SamplingOptions(skia.FilterMode.kLinear,
                                                     skia.MipmapMode.kLinear))
-    # this build of skia uses BGRA_8888 as N32, we want RGBA out
-    return np.ascontiguousarray(img.toarray()[:, :, [2, 1, 0, 3]])
+    # toarray() already gives real RGBA on this build
+    return np.ascontiguousarray(img.toarray())
 
 
 __all__ = [n for n in dir() if not n.startswith('_')]
+
+
+# --------------------------------------------------------------------------- #
+# finishing pass: paper, grain, vignette (drawn after the artwork)
+# --------------------------------------------------------------------------- #
+def finish_frame(c: Canvas, t: float, paper=None, paper_strength=0.045,
+                 grain_strength=0.010, vig=0.20, seed=0):
+    """Give the frame the hand-made finish: paper fibre, a touch of grain
+    that shifts every frame, and a soft vignette."""
+    if paper is not None:
+        # paper drifts very slowly so the texture feels like a held sheet
+        step = 7  # px per second of drift (tiny)
+        paper_overlay(c, paper, paper_strength, 1.0,
+                      (int(t * 2.0) % 512, int(t * 1.0) % 512))
+    if grain_strength > 0:
+        _draw_grain(c, t, grain_strength, seed)
+    if vig > 0:
+        vignette(c, vig)
+
+
+_GRAIN = None
+
+
+def _draw_grain(c: Canvas, t: float, strength: float, seed=0):
+    global _GRAIN
+    if _GRAIN is None:
+        rng = np.random.default_rng(1234)
+        g = rng.normal(0, 1, (256, 256)).astype(np.float32)
+        a = np.clip(128 + g * 42, 0, 255).astype(np.uint8)
+        _GRAIN = skia.Image.fromarray(
+            np.dstack([a, a, a, np.full_like(a, 255)]),
+            colorType=skia.kRGBA_8888_ColorType)
+    m = skia.Matrix()
+    s = 2.0
+    m.setScale(s, s)
+    # shift per frame so the grain "boils" like hand-drawn texture
+    f = int(t * 24)
+    ox = (f * 37) % 256
+    oy = (f * 61) % 256
+    m.postTranslate(-ox * s, -oy * s)
+    p = skia.Paint()
+    p.setShader(_GRAIN.makeShader(skia.TileMode.kRepeat, skia.TileMode.kRepeat,
+                                  skia.SamplingOptions(skia.FilterMode.kNearest), m))
+    p.setBlendMode(skia.BlendMode.kOverlay)
+    p.setAlphaf(float(strength))
+    c.c.drawPaint(p)

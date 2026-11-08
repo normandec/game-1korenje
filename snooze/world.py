@@ -127,6 +127,20 @@ def _roof(c: Canvas, x, w, top, kind, ink, fill, iw=3.0):
         c.rrect(x + w * 0.24, top - 84, w * 0.52, 40, 6, fill, ink, iw)
 
 
+def draw_warm_wash(c: Canvas, amount=1.0, colors=("#FFB07A", "#FFD9A0"), alpha=0.55):
+    """Screen-blended warm light flooding the frame (dawn spreading)."""
+    if amount <= 0.001:
+        return
+    p = skia.Paint(AntiAlias=True)
+    p.setShader(lin_shader(0, H * 0.15, 0, H,
+                           [rgba(colors[1], alpha * 0.75 * amount),
+                            rgba(colors[0], alpha * amount),
+                            rgba(colors[0], alpha * 0.55 * amount)],
+                           [0.0, 0.55, 1.0]))
+    p.setBlendMode(skia.BlendMode.kScreen)
+    c.c.drawPaint(p)
+
+
 def draw_city_far(c: Canvas, base_y, color, ink=None, window_alpha=0.0, t=0.0,
                   window_color="#FFCE73", offset=0.0):
     """Distant skyline: simple silhouettes, tiny windows."""
@@ -424,9 +438,9 @@ def draw_horizon_band(c: Canvas, y, height, colors, alpha=1.0, glow=1.0):
     p = fill_paint(col(colors[0]))
     p.setShader(lin_shader(0, y - height * 0.9, 0, y + height * 0.25,
                            [rgba(colors[0], 0.0), rgba(colors[1], 0.55 * alpha),
-                            rgba(colors[2], 0.9 * alpha)],
-                           [0.0, 0.55, 1.0]))
-    c.c.drawRect(skia.Rect.MakeLTRB(0, y - height * 0.9, W, y + height * 0.25), p)
+                            rgba(colors[2], 0.9 * alpha), rgba(colors[2], 0.9 * alpha)],
+                           [0.0, 0.45, 0.78, 1.0]))
+    c.c.drawRect(skia.Rect.MakeLTRB(0, y - height * 0.9, W, H + 40), p)
     if glow > 0:
         gp = skia.Paint(AntiAlias=True)
         gp.setShader(rad_shader(W / 2, y, W * 0.95,
@@ -434,4 +448,4 @@ def draw_horizon_band(c: Canvas, y, height, colors, alpha=1.0, glow=1.0):
                                  rgba(colors[1], 0.0)],
                                 [0.24, 1.0]))
         gp.setBlendMode(skia.BlendMode.kScreen)
-        c.c.drawRect(skia.Rect.MakeLTRB(0, y - H * 0.3, W, y + H * 0.12), gp)
+        c.c.drawPaint(gp)

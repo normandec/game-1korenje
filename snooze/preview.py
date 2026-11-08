@@ -7,8 +7,7 @@ import sys, os, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import skia
-from snooze.gfx import W, H, FRAMES, FPS, render_canvas_ss, downsample
+from snooze.gfx import W, H, FRAMES, FPS, render_canvas_ss, downsample, save_frame
 from snooze import film
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -22,7 +21,7 @@ def render_time(tsec, ss=2, path=None):
     arr = downsample(surf, ss)
     os.makedirs(OUT, exist_ok=True)
     path = path or os.path.join(OUT, f"t{tsec:07.2f}.png")
-    skia.Image.fromarray(arr, colorType=skia.kRGBA_8888_ColorType).save(path)
+    save_frame(arr, path)      # arr is a raw skia buffer (BGRA)
     return path
 
 

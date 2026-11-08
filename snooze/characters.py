@@ -561,13 +561,16 @@ def draw_sun(
     c.clip(disc)
     c.fill(ellipse_path(0, SUN_R * 0.42, SUN_R * 1.1, SUN_R * 0.62),
            rgba(pal.SUN_GOLD_DK, 0.5))
-    c.fill(ellipse_path(-SUN_R * 0.34, SUN_R * 0.46, SUN_R * 0.46, SUN_R * 0.26, -0.5),
-           rgba(pal.SUN_GOLD_LT, 0.75))
+    # rim light along the top of the disc, kept clear of the eyes
+    c.fill(ellipse_path(-SUN_R * 0.12, SUN_R * 0.76, SUN_R * 0.62, SUN_R * 0.145, -0.16),
+           rgba(pal.SUN_GOLD_LT, 0.72))
+    c.fill(ellipse_path(SUN_R * 0.30, SUN_R * 0.80, SUN_R * 0.34, SUN_R * 0.10, -0.30),
+           rgba(pal.SUN_GOLD_LT, 0.55))
     c.restore()
 
     # ---- nose (soft, only really shows when it flares) --------------------
     twk = math.sin(nose_twitch * 7.0) * 5.0 * (1 if nose_twitch else 0)
-    nose_y = -SUN_R * 0.08
+    nose_y = -SUN_R * 0.03
     c.save()
     c.clip(disc)
     c.fill(ellipse_path(twk, nose_y + 6, 30 + 10 * nostril, 19 + 7 * nostril),
@@ -581,7 +584,7 @@ def draw_sun(
                                  2.5 + 4.5 * nostril), hexa("#A85622"), None)
 
     # ---- eyes -------------------------------------------------------------
-    ex, ey = 88.0, SUN_R * 0.30
+    ex, ey = 88.0, SUN_R * 0.38
     if eyes == "shut":
         for sgn in (-1, 1):
             c.stroke(smooth_open([(sgn * ex - 40, ey + 4), (sgn * ex, ey - 20),
@@ -611,12 +614,12 @@ def draw_sun(
         c.save()
         c.clip(disc)
         for sgn in (-1, 1):
-            c.fill(ellipse_path(sgn * 150, -96, 30, 17),
+            c.fill(ellipse_path(sgn * 152, -74, 30, 17),
                    rgba(pal.SUN_CHEEK, (0.5 + 0.4 * blush_extra) * cheeks))
         c.restore()
 
     # ---- mouth ------------------------------------------------------------
-    draw_mouth(c, 0, -SUN_R * 0.40, 64, mouth, mouth_amt, ink, 6, fill="#8F4A3A")
+    draw_mouth(c, 0, -SUN_R * 0.42, 70, mouth, mouth_amt, ink, 6.5, fill="#8F4A3A")
 
     # ---- blanket (a small cloud pulled up like a duvet) -------------------
     if blanket > 0:

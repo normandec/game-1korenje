@@ -41,6 +41,7 @@ draw_star(c, 620, 640, 16, rot=0.3)
 draw_burst(c, 540, 520, 100, 160, 10, "#FFFFFF", 0.55, 5, rot=0.2)
 
 arr = downsample(surf, ss)
-skia.Image.fromarray(arr, colorType=skia.kRGBA_8888_ColorType).save(
+from snooze.gfx import save_frame
+save_frame(arr, 
     '/home/user/game-1korenje/output/_sheet.png')
 print("ok", arr.shape)

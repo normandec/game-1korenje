@@ -193,11 +193,11 @@ def tableau(c: Canvas, st: Stage, tl: float, sky_key="midnight", toward=None,
                 wd.draw_sound_rings(c, cx, cy + 60, t, power * 0.9, "#FFD465", 3, 1.6,
                                     6.0, 0.9, max_r=300)
 
-    # foreground cloud wisp
+    # foreground cloud wisp (kept dark and soft so it reads as depth, not rock)
     with st.layer(1.14):
-        draw_cloud(c, 140, 1760, 620, 200, rgba(sky.cloud, 0.9), None, 0,
+        draw_cloud(c, 120, 1830, 760, 240, rgba(sky.mid, 0.95), None, 0,
                    seed=44, lobes=5)
-        draw_cloud(c, 980, 1810, 560, 180, rgba(sky.cloud, 0.85), None, 0,
+        draw_cloud(c, 1010, 1880, 660, 200, rgba(sky.mid, 0.9), None, 0,
                    seed=52, lobes=5)
 
     if wake > 0:
