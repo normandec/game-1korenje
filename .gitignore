@@ -1,0 +1,16 @@
+# SNOOZE — render pipeline
+
+Ignored: rendered stills/MP4s and review sheets (regenerate with the tools below).
+source/ and blender/ stay in git — they are the editable project.
+
+output/*
+output/preview/*
+!output/.gitkeep
+# deliverables: keep these in git so they are directly downloadable
+!output/snooze.mp4
+!output/SNOOZE_project.blend
+!output/snooze_audio.wav
+!output/SNOOZE_contactsheet.png
+
+__pycache__/
+*.pyc
