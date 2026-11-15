@@ -1316,8 +1316,8 @@ function update(dt, now) {
   // story
   updateStory(dt); updateStoryObjects(now); updateDialog(dt); updateRis(dt, now);
   if (!player.vehicle && !player.held && !player.dead && !dlg.cur) {
-    const v = nearestVehicle(), n = nearestNPC(), p = nearestProp();
-    if (v) showHint('E — vstopi · F orožje', .2); else if (n) showHint('E — pogovor', .2); else if (p) showHint('E — dvigni', .2);
+    const t = nearestTarget();
+    if (t && hintTimer <= 0) showHint(t.label, .2); // don't overwrite a dialogue line or other message
   }
   gunG.visible = player.armed && !player.vehicle && !player.dead;
   if (hintTimer > 0) { hintTimer -= dt; if (hintTimer <= 0) hintEl.classList.remove('show'); }
@@ -1445,12 +1445,36 @@ function shoot() {
   W.walkPitch = clamp(W.walkPitch + .015, -1.12, 1.2);
   if (player.ammo <= 0) player.reload = 1.4;
 }
+// Everything the player can act on right now, nearest first.
+function nearestTarget() {
+  const pos = W.walkPosition, cands = [];
+  for (const v of vehicles) {
+    if (!v.active || v.driver) continue;
+    const d = v.g.position.distanceTo(pos), r = v.kind === 'plane' ? 9 : v.kind === 'heli' ? 8 : v.kind === 'tank' ? 9 : 7;
+    if (d < r) cands.push({ kind: 'vehicle', obj: v, d, label: 'E — vstopi' + (v.kind === 'car' ? ' v avto' : v.kind === 'boat' ? ' v čoln' : '') + ' · F orožje' });
+  }
+  for (const n of npcs) {
+    if (n.dead > 0 || n.ragdoll > 0 || n.role !== 'civilian') continue;
+    const d = n.g.position.distanceTo(pos); if (d < 3) cands.push({ kind: 'npc', obj: n, d, label: 'E — pogovor' });
+  }
+  for (const p of props) { if (p === player.held) continue; const d = p.g.position.distanceTo(pos); if (d < 3) cands.push({ kind: 'prop', obj: p, d, label: 'E — dvigni' }); }
+  if (player.held) return { kind: 'held', obj: player.held, d: 0, label: 'Klik vrže · E odloži' };
+  cands.sort((a, b) => a.d - b.d);
+  return cands[0] || null;
+}
+// What a civilian says depends on the situation, not only on a random pick.
+function talkLine() {
+  if (wanted > 0) return pick(['Nisem nič videl, prisežem!', 'Prosim, pusti me pri miru.', 'Pokličem policijo!']);
+  if (player.armed) return pick(['Odloži to orožje, prosim.', 'Ne streljaj, nisem tvoj človek.', 'Pazi, kam uperjaš.']);
+  return pick(dialogue);
+}
 function interact() {
   if (player.vehicle) { exitVehicle(); return; }
-  if (player.held) { dropHeld(); return; }
-  const v = nearestVehicle(); if (v) { enterVehicle(v); return; }
-  const n = nearestNPC(); if (n) { showHint(pick(dialogue), 3); n.timer = 2; n.state = 'idle'; return; }
-  const p = nearestProp(); if (p) { grabProp(p); return; }
+  const t = nearestTarget(); if (!t) return;
+  if (t.kind === 'held') { dropHeld(); return; }
+  if (t.kind === 'vehicle') { enterVehicle(t.obj); return; }
+  if (t.kind === 'npc') { const n = t.obj; showHint(talkLine(), 3); n.state = 'talk'; n.timer = 3; n.goal = null; return; }
+  if (t.kind === 'prop') { grabProp(t.obj); return; }
 }
 const camPos = V3(), camLook = V3();
 
