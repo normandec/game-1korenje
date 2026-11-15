@@ -211,6 +211,7 @@ const npcs = [];
 const dialogue = ['Dober dan!', 'Lepo mesto, kajne?', 'Črte so danes ostre.', 'Pazi na avte!', 'Si že obiskal svetilnik?', 'Kava ob pristanišču je najboljša.', 'Ne me povozi, prosim.', 'Slišiš veter v črtah?', 'Za vogalom je nova ulica.', 'Danes je dober dan za sprehod.', 'Počasi, nekdo je oborožen!', 'Slišal sem strele!', 'Kaj je to za svetlobo na nebu?', 'Vojska je spet na cesti.'];
 let gunshot = { x: 0, z: 0, t: -1e9 };       // t in ms (same clock as nowMs)
 let wanted = 0, wantedDecay = 0;
+let reportCd = 0;                              // seconds until another witness report counts
 let alarm = 0;                                 // seconds: military base is on alert
 function raiseWanted(n) { wanted = clamp(wanted + n, 0, 5); wantedDecay = 0; responseTimer = 0; hudWanted(); }
 function makeNPC(x, z, role = 'civilian') {
@@ -262,6 +263,20 @@ function hurtNPC(n, dmg, dir, lift = 2, byPlayer = false) {
   if (byPlayer && (n.role === 'police' || n.role === 'guard' || n.role === 'soldier')) raiseWanted(1);
   if (n.health <= 0) { n.dead = 3; n.ragdoll = 0; }
 }
+// Civilian starts running away from a threat (position record {x,z}).
+function startFlee(n, threat) {
+  const p = n.body.position; n.mem = threat; n.state = 'flee';
+  const dx = p.x - threat.x, dz = p.z - threat.z, d = Math.hypot(dx, dz) || 1;
+  setTarget(n, p.x + dx / d * 25, p.z + dz / d * 25);
+}
+// Guards and soldiers pass an alarm to nearby members of their own group.
+function alertSquad(n) {
+  const p = n.body.position;
+  for (const m of npcs) {
+    if (m === n || m.role !== n.role || m.dead > 0 || m.alert > 0) continue;
+    if (Math.hypot(m.body.position.x - p.x, m.body.position.z - p.z) < 25) { m.alert = 3; m.mem = n.mem; }
+  }
+}
 function updateNPC(n, dt, now) {
   const p = n.body.position;
   if (n.dead > 0) {
@@ -305,12 +320,24 @@ function updateNPC(n, dt, now) {
           hurtNPC(n, sp * 12, dir, 3, v.driver === player);
           break;
         } } } }
+  // witnesses: a civilian who sees the player shooting reports it to the police
+  if (n.role === 'civilian' && n.reportCd > 0) n.reportCd -= dt;
+  if (n.role === 'civilian' && player.armed && seesPlayer && distP < 30 && (now - gunshot.t) < 1200 && (n.reportCd || 0) <= 0) {
+    n.reportCd = 25;
+    if (reportCd <= 0) { reportCd = 12; raiseWanted(1); showHint('Nekdo te je videl. Policija je obveščena.', 3); }
+  }
   if (n.role === 'guard' || n.role === 'soldier') { guardAI(n, dt, now, distP, threat); return; }
   if (n.role === 'police') { policeAI(n, dt, now, distP); return; }
   // civilian utility AI
   if (threat) { n.alert = 3; n.mem = threat;
-    if (n.state !== 'flee') { n.state = 'flee'; const dx = p.x - threat.x, dz = p.z - threat.z, d = Math.hypot(dx, dz) || 1; setTarget(n, p.x + dx / d * 25, p.z + dz / d * 25); }
-  } else if (n.alert > 0) { n.alert -= dt; if (n.alert <= 0) { n.state = 'wander'; n.timer = 0; } }
+    if (n.state !== 'flee') {
+      startFlee(n, threat);
+      for (const m of npcs) { // panic spreads to people standing close by
+        if (m === n || m.role !== 'civilian' || m.dead > 0 || m.fixed) continue;
+        if (Math.hypot(m.body.position.x - p.x, m.body.position.z - p.z) < 7) { m.alert = Math.max(m.alert, 2.5); m.mem = threat; }
+      }
+    }
+  } else if (n.alert > 0) { if (n.mem && n.state !== 'flee') startFlee(n, n.mem); n.alert -= dt; if (n.alert <= 0) { n.state = 'wander'; n.timer = 0; } }
   n.timer -= dt;
   if (n.state === 'wander') {
     if (!n.target || n.timer <= 0) {
@@ -357,7 +384,7 @@ function guardAI(n, dt, now, distP, threat) {
   const p = n.body.position;
   const los = distP < 45 && hasLOS(p.x, 1.5, p.z, W.walkPosition.x, W.walkPosition.y, W.walkPosition.z);
   const intruder = (distP < 22 && los) || (distP < 40 && los && (player.armed || wanted > 0)) || (alarm > 0 && distP < 260 && los);
-  if (intruder || threat) { n.alert = 4; n.mem = { x: W.walkPosition.x, z: W.walkPosition.z }; }
+  if (intruder || threat) { n.alert = 4; n.mem = { x: W.walkPosition.x, z: W.walkPosition.z }; alertSquad(n); }
   else n.alert = Math.max(0, n.alert - dt);
   let moving = false;
   if (n.alert > 0 && n.mem) {
@@ -1239,7 +1266,7 @@ world.addEventListener('preStep', () => {
 });
 let muzzle = 0;
 function update(dt, now) {
-  nowMs = now; gameT += dt;
+  nowMs = now; gameT += dt; reportCd = Math.max(0, reportCd - dt);
   if (player.held) { const dir = V3(); camera.getWorldDirection(dir); const pos = camera.position.clone().add(dir.multiplyScalar(2)); player.held.body.position.set(pos.x, pos.y, pos.z); }
   for (const n of npcs) updateNPC(n, dt, now);
   for (const v of vehicles) {
