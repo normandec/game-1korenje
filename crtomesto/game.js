@@ -4,6 +4,7 @@
 import * as CANNON from './assets/cannon-es.js';
 import { sfx } from './audio.js';
 import { CHAPTERS, LINES, WAVE_TIME } from './story.js';
+import { createAI } from './ai.js';
 
 const W = window.__pencilWorld;
 if (!W) throw new Error('world missing');
@@ -223,7 +224,7 @@ function makeNPC(x, z, role = 'civilian') {
   const body = new CANNON.Body({ mass: 70, material: matObj, shape: new CANNON.Sphere(.35), position: CV(x, .4, z), linearDamping: .9, angularDamping: .9 });
   body.type = CANNON.Body.KINEMATIC; world.addBody(body);
   const n = {
-    ...h, body, role, x, z, yaw: rand(0, TAU), speed: role === 'soldier' ? 2.1 : rand(1.1, 1.7), state: 'wander', target: null, path: null, pathI: 0,
+    ...h, body, role, x, z, yaw: rand(0, TAU), speed: role === 'soldier' ? 2.1 : rand(1.1, 1.7), state: (role === 'civilian' || role === 'story') ? 'routine' : 'post', goal: null, arrived: false, target: null, path: null, pathI: 0,
     timer: rand(0, 4), health: role === 'soldier' ? 80 : 100, ragdoll: 0, dead: 0, phase: rand(0, TAU), home: CV(x, .4, z), alert: 0, mem: null, shootCd: 0,
     patrol: null, patrolI: 0, gesture: 0, fixed: role === 'story', temp: role === 'police' || role === 'soldier', gone: false, partner: null,
   };
@@ -245,11 +246,15 @@ for (let i = 0; i < 14; i++) { const x = rand(-34, 34), z = rand(-12, 6); if (W.
 const mihec = makeNPC(16, 1, 'story'); mihec.name = 'Mihec';
 
 function setTarget(n, x, z) { n.target = { x, z }; n.path = findPath(n.body.position.x, n.body.position.z, x, z); n.pathI = 0; }
+// NPC gunfire: slower for police, inaccurate at range (spread grows with distance and is worst for civilians/police).
 function npcShoot(n, tx, ty, tz) {
   if (n.shootCd > 0) return;
-  n.shootCd = n.role === 'soldier' ? .55 : .8;
+  n.shootCd = n.role === 'soldier' ? .55 : n.role === 'police' ? 1.3 : .8;
   const from = n.g.position.clone().add(V3(0, 1.4, 0));
-  fireBullet(from, V3(tx, ty, tz).sub(from).normalize(), 'npc');
+  const d = Math.hypot(tx - from.x, tz - from.z);
+  const spread = (n.role === 'soldier' ? .03 : n.role === 'guard' ? .05 : .08) * d;
+  const aim = V3(tx + rand(-spread, spread), ty + rand(-spread * .5, spread * .5), tz + rand(-spread, spread));
+  fireBullet(from, aim.sub(from).normalize(), 'npc');
 }
 // A living NPC is knocked over by a hit (ragdoll) and may die.
 function hurtNPC(n, dmg, dir, lift = 2, byPlayer = false) {
@@ -262,109 +267,6 @@ function hurtNPC(n, dmg, dir, lift = 2, byPlayer = false) {
   if (byPlayer && n.role === 'civilian') raiseWanted(2);
   if (byPlayer && (n.role === 'police' || n.role === 'guard' || n.role === 'soldier')) raiseWanted(1);
   if (n.health <= 0) { n.dead = 3; n.ragdoll = 0; }
-}
-// Civilian starts running away from a threat (position record {x,z}).
-function startFlee(n, threat) {
-  const p = n.body.position; n.mem = threat; n.state = 'flee';
-  const dx = p.x - threat.x, dz = p.z - threat.z, d = Math.hypot(dx, dz) || 1;
-  setTarget(n, p.x + dx / d * 25, p.z + dz / d * 25);
-}
-// Guards and soldiers pass an alarm to nearby members of their own group.
-function alertSquad(n) {
-  const p = n.body.position;
-  for (const m of npcs) {
-    if (m === n || m.role !== n.role || m.dead > 0 || m.alert > 0) continue;
-    if (Math.hypot(m.body.position.x - p.x, m.body.position.z - p.z) < 25) { m.alert = 3; m.mem = n.mem; }
-  }
-}
-function updateNPC(n, dt, now) {
-  const p = n.body.position;
-  if (n.dead > 0) {
-    n.dead -= dt;
-    n.g.position.set(p.x, Math.max(0, p.y - .4), p.z); n.g.quaternion.copy(n.body.quaternion);
-    n.g.scale.setScalar(Math.max(.01, Math.min(1, n.dead / 3)));
-    if (n.dead <= 0) {
-      if (n.temp) { n.gone = true; return; }
-      n.health = 100; n.state = 'wander'; n.ragdoll = 0; n.body.type = CANNON.Body.KINEMATIC;
-      n.body.position.copy(n.home); n.body.velocity.setZero(); n.body.quaternion.set(0, 0, 0, 1); n.g.scale.setScalar(1); n.g.quaternion.set(0, 0, 0, 1);
-    }
-    return;
-  }
-  const distP = Math.hypot(p.x - W.walkPosition.x, p.z - W.walkPosition.z);
-  n.g.visible = distP < 110;
-  if (n.temp && distP > 190 && n.alert <= 0) { n.gone = true; return; }
-  if (!n.g.visible) { n.body.velocity.setZero(); return; }
-  n.shootCd = Math.max(0, n.shootCd - dt);
-  if (n.ragdoll > 0) {
-    n.ragdoll -= dt; n.body.type = CANNON.Body.DYNAMIC; n.g.position.copy(n.body.position); n.g.quaternion.copy(n.body.quaternion);
-    if (n.ragdoll <= 0) { n.state = 'wander'; n.body.type = CANNON.Body.KINEMATIC; n.body.quaternion.set(0, 0, 0, 1); n.body.position.y = .4; }
-    return;
-  }
-  if (n.fixed) { // story NPC: stands still, turns to face the player
-    if (distP < 14) n.yaw = Math.atan2(W.walkPosition.x - p.x, W.walkPosition.z - p.z);
-    n.body.velocity.setZero(); n.g.position.set(p.x, 0, p.z); n.g.rotation.set(0, n.yaw, 0);
-    n.head.rotation.y = Math.sin(now * .0006 + n.phase) * .2; n.hips.position.y = .95 + Math.sin(now * .0015 + n.phase) * .008;
-    n.aL.shoulder.rotation.x = 0; n.aR.shoulder.rotation.x = 0; return;
-  }
-  const hearGun = (now - gunshot.t) < 4000 && Math.hypot(p.x - gunshot.x, p.z - gunshot.z) < 45;
-  const seesPlayer = distP < 30 && hasLOS(p.x, 1.4, p.z, W.walkPosition.x, W.walkPosition.y, W.walkPosition.z);
-  let threat = null;
-  if (player.armed && seesPlayer && distP < 22) threat = { x: W.walkPosition.x, z: W.walkPosition.z };
-  if (hearGun) threat = { x: gunshot.x, z: gunshot.z };
-  for (const v of vehicles) {
-    if (!v.active) continue; const sp = v.body.velocity.length();
-    if (sp > 5) { const d = Math.hypot(p.x - v.g.position.x, p.z - v.g.position.z);
-      if (d < 7) { threat = { x: v.g.position.x, z: v.g.position.z };
-        if (d < 2.2 && n.ragdoll <= 0) { // run-over
-          const dir = V3(p.x - v.g.position.x, 0, p.z - v.g.position.z).normalize();
-          hurtNPC(n, sp * 12, dir, 3, v.driver === player);
-          break;
-        } } } }
-  // witnesses: a civilian who sees the player shooting reports it to the police
-  if (n.role === 'civilian' && n.reportCd > 0) n.reportCd -= dt;
-  if (n.role === 'civilian' && player.armed && seesPlayer && distP < 30 && (now - gunshot.t) < 1200 && (n.reportCd || 0) <= 0) {
-    n.reportCd = 25;
-    if (reportCd <= 0) { reportCd = 12; raiseWanted(1); showHint('Nekdo te je videl. Policija je obveščena.', 3); }
-  }
-  if (n.role === 'guard' || n.role === 'soldier') { guardAI(n, dt, now, distP, threat); return; }
-  if (n.role === 'police') { policeAI(n, dt, now, distP); return; }
-  // civilian utility AI
-  if (threat) { n.alert = 3; n.mem = threat;
-    if (n.state !== 'flee') {
-      startFlee(n, threat);
-      for (const m of npcs) { // panic spreads to people standing close by
-        if (m === n || m.role !== 'civilian' || m.dead > 0 || m.fixed) continue;
-        if (Math.hypot(m.body.position.x - p.x, m.body.position.z - p.z) < 7) { m.alert = Math.max(m.alert, 2.5); m.mem = threat; }
-      }
-    }
-  } else if (n.alert > 0) { if (n.mem && n.state !== 'flee') startFlee(n, n.mem); n.alert -= dt; if (n.alert <= 0) { n.state = 'wander'; n.timer = 0; } }
-  n.timer -= dt;
-  if (n.state === 'wander') {
-    if (!n.target || n.timer <= 0) {
-      const r = Math.random();
-      if (r < .18) { n.state = 'idle'; n.timer = rand(2, 6); }
-      else if (r < .3) { // socialise: find nearby civilian
-        const other = npcs.find(m => m !== n && m.role === 'civilian' && m.dead <= 0 && Math.hypot(m.body.position.x - p.x, m.body.position.z - p.z) < 12);
-        if (other) { n.state = 'social'; n.timer = rand(3, 7); n.partner = other; setTarget(n, other.body.position.x + rand(-1, 1), other.body.position.z + rand(-1, 1)); }
-        else { setTarget(n, n.home.x + rand(-20, 20), n.home.z + rand(-20, 20)); n.timer = rand(4, 10); }
-      } else { setTarget(n, n.home.x + rand(-24, 24), n.home.z + rand(-24, 24)); n.timer = rand(4, 11); }
-    }
-  } else if (n.state === 'idle') { if (n.timer <= 0) { n.state = 'wander'; n.timer = 0; } }
-  else if (n.state === 'social') { if (n.timer <= 0 || !n.partner) { n.state = 'wander'; n.timer = 0; } }
-  else if (n.state === 'flee') { if (n.alert <= 0) { n.state = 'wander'; n.timer = 0; } }
-  // follow path
-  let moving = false, spd = n.speed * (n.state === 'flee' ? 2.1 : 1);
-  if (n.path && n.pathI < n.path.length && (n.state === 'wander' || n.state === 'flee' || n.state === 'social')) {
-    const wp = n.path[n.pathI], dx = wp.x - p.x, dz = wp.z - p.z, d = Math.hypot(dx, dz);
-    if (d < 1.2) { n.pathI++; if (n.pathI >= n.path.length) { n.path = null; if (n.state === 'wander') n.timer = Math.min(n.timer, 1); } }
-    else { const nx = dx / d, nz = dz / d;
-      let sx = 0, sz = 0; if (distP < 60) for (const m of npcs) { if (m === n || m.dead > 0) continue; const mx = p.x - m.body.position.x, mz = p.z - m.body.position.z, md = Math.hypot(mx, mz); if (md < 1 && md > 0) { sx += mx / md * (1 - md); sz += mz / md * (1 - md); } }
-      const vx = nx * spd + sx * 1.5, vz = nz * spd + sz * 1.5;
-      n.body.velocity.set(vx, 0, vz); n.yaw = Math.atan2(vx, vz); moving = true; }
-  } else if (n.state === 'social' && n.partner) { n.yaw = Math.atan2(n.partner.body.position.x - p.x, n.partner.body.position.z - p.z); n.body.velocity.setZero(); }
-  else n.body.velocity.setZero();
-  n.g.position.set(p.x, 0, p.z); n.g.rotation.set(0, n.yaw, 0);
-  animateHuman(n, now, moving, distP);
 }
 function animateHuman(n, now, moving, distP) {
   const t = now * .001 * (moving ? n.speed * 3.4 : 1) + n.phase;
@@ -380,45 +282,113 @@ function animateHuman(n, now, moving, distP) {
     if (n.state === 'flee') n.torso.rotation.x = .2; else n.torso.rotation.x = 0;
   } else { n.aL.shoulder.rotation.x = -sw * .5; n.aR.shoulder.rotation.x = sw * .5; n.hips.position.y = .95; }
 }
-function guardAI(n, dt, now, distP, threat) {
-  const p = n.body.position;
-  const los = distP < 45 && hasLOS(p.x, 1.5, p.z, W.walkPosition.x, W.walkPosition.y, W.walkPosition.z);
-  const intruder = (distP < 22 && los) || (distP < 40 && los && (player.armed || wanted > 0)) || (alarm > 0 && distP < 260 && los);
-  if (intruder || threat) { n.alert = 4; n.mem = { x: W.walkPosition.x, z: W.walkPosition.z }; alertSquad(n); }
-  else n.alert = Math.max(0, n.alert - dt);
+// Noise events (gunshots, explosions) that NPCs can hear: {x,z,r,t}.
+const noises = [];
+function makeNoise(x, z, r) { noises.push({ x, z, r, t: nowMs }); }
+
+// The brains live in ai.js; they only describe what each NPC wants to do.
+const AI = createAI({
+  npcs: () => npcs,
+  vehicles: () => vehicles,
+  noises: () => noises,
+  player: () => ({
+    x: W.walkPosition.x, y: W.walkPosition.y, z: W.walkPosition.z,
+    armed: player.armed && !player.vehicle, wanted, alarm,
+    recentShot: (nowMs - gunshot.t) < 1200,
+  }),
+  hasLOS,
+  pickPoi: (x, z, r) => {
+    const c = civSpots.filter(([a, b]) => Math.hypot(a - x, b - z) < r);
+    if (!c.length) return null;
+    const s = c[Math.floor(Math.random() * c.length)]; return { x: s[0], z: s[1] };
+  },
+  onWitness: () => {
+    if (reportCd <= 0) { reportCd = 12; raiseWanted(1); showHint('Nekdo te je videl. Policija je obveščena.', 3); }
+  },
+});
+
+// Carries out an NPC intent: path following, separation, facing, shooting, pose.
+function applyIntent(n, it, dt, now, distP) {
+  const p = n.body.position, speed = (it.speed ?? n.speed) * (it.mult ?? 1);
   let moving = false;
-  if (n.alert > 0 && n.mem) {
-    const dx = n.mem.x - p.x, dz = n.mem.z - p.z, d = Math.hypot(dx, dz);
-    n.yaw = Math.atan2(dx, dz);
-    if (d > 9) { const nx = dx / d, nz = dz / d; n.body.velocity.set(nx * n.speed * 1.6, 0, nz * n.speed * 1.6); moving = true; }
-    else { n.body.velocity.setZero(); npcShoot(n, W.walkPosition.x, W.walkPosition.y, W.walkPosition.z); }
-  } else if (n.patrol) {
-    const wp = n.patrol[n.patrolI], dx = wp.x - p.x, dz = wp.z - p.z, d = Math.hypot(dx, dz);
-    if (d < 1.5) n.patrolI = (n.patrolI + 1) % n.patrol.length;
-    else { n.body.velocity.set(dx / d * n.speed, 0, dz / d * n.speed); n.yaw = Math.atan2(dx, dz); moving = true; }
-  } else n.body.velocity.setZero();
-  n.g.position.set(p.x, 0, p.z); n.g.rotation.set(0, n.yaw, 0);
-  const t = now * .001 * (moving ? n.speed * 3.4 : 1) + n.phase, sw = moving ? Math.sin(t) * .5 : 0;
-  n.lL.hip.rotation.x = sw; n.lR.hip.rotation.x = -sw; n.aL.shoulder.rotation.x = -sw * .5; n.aR.shoulder.rotation.x = -.9;
-  n.head.rotation.y = n.alert > 0 ? 0 : Math.sin(now * .0005 + n.phase) * .4;
-}
-function policeAI(n, dt, now, distP) {
-  n.timer -= dt;
-  const p = n.body.position; let moving = false;
-  if (wanted > 0) {
-    const dx = W.walkPosition.x - p.x, dz = W.walkPosition.z - p.z, d = Math.hypot(dx, dz);
-    n.yaw = Math.atan2(dx, dz);
-    if (d > 7) {
-      if (!n.path || n.timer <= 0) { setTarget(n, W.walkPosition.x, W.walkPosition.z); n.timer = 1; }
-      if (n.path && n.pathI < n.path.length) { const wp = n.path[n.pathI], wx = wp.x - p.x, wz = wp.z - p.z, wd = Math.hypot(wx, wz); if (wd < 1.2) n.pathI++; else { n.body.velocity.set(wx / wd * n.speed * 2, 0, wz / wd * n.speed * 2); moving = true; } }
-      else { // no path: run straight at the player
-        n.body.velocity.set(dx / d * n.speed * 1.8, 0, dz / d * n.speed * 1.8); moving = true; }
+  if (it.goal) {
+    const g = it.goal;
+    if (!n.target || Math.hypot(n.target.x - g.x, n.target.z - g.z) > 1.5) { setTarget(n, g.x, g.z); n.arrived = false; }
+    const d = Math.hypot(g.x - p.x, g.z - p.z);
+    if (d < 1.5) { n.arrived = true; n.body.velocity.setZero(); }
+    else {
+      let wx = g.x, wz = g.z;
+      if (n.path) {
+        while (n.pathI < n.path.length && Math.hypot(n.path[n.pathI].x - p.x, n.path[n.pathI].z - p.z) < 1.2) n.pathI++;
+        if (n.pathI < n.path.length) { wx = n.path[n.pathI].x; wz = n.path[n.pathI].z; }
+      }
+      const dx = wx - p.x, dz = wz - p.z, dd = Math.hypot(dx, dz) || 1;
+      let sx = 0, sz = 0;
+      if (distP < 60) for (const m of npcs) {
+        if (m === n || m.dead > 0) continue;
+        const mx = p.x - m.body.position.x, mz = p.z - m.body.position.z, md = Math.hypot(mx, mz);
+        if (md < 1 && md > 0) { sx += mx / md * (1 - md); sz += mz / md * (1 - md); }
+      }
+      n.body.velocity.set(dx / dd * speed + sx * 1.5, 0, dz / dd * speed + sz * 1.5);
+      moving = true;
     }
-    else { n.body.velocity.setZero(); if (wanted >= 2) npcShoot(n, W.walkPosition.x, W.walkPosition.y, W.walkPosition.z); }
-  } else { n.body.velocity.setZero(); }
+  } else { n.target = null; n.path = null; n.body.velocity.setZero(); }
+  if (it.face) n.yaw = Math.atan2(it.face.x - p.x, it.face.z - p.z);
+  else if (moving) n.yaw = Math.atan2(n.body.velocity.x, n.body.velocity.z);
+  if (it.fire) npcShoot(n, it.fire.x, it.fire.y, it.fire.z);
   n.g.position.set(p.x, 0, p.z); n.g.rotation.set(0, n.yaw, 0);
-  const t = now * .001 * (moving ? 6 : 1) + n.phase, sw = moving ? Math.sin(t) * .55 : 0;
-  n.lL.hip.rotation.x = sw; n.lR.hip.rotation.x = -sw; n.aL.shoulder.rotation.x = -sw * .6; n.aR.shoulder.rotation.x = wanted > 0 ? -.9 : sw * .6;
+  animateHuman(n, now, moving, distP);
+  if (it.pose === 'aim') { n.aR.shoulder.rotation.x = -1.3; n.aL.shoulder.rotation.x = -.9; n.aL.elbow.rotation.x = -.9; }
+  else if (it.pose === 'point') { n.aR.shoulder.rotation.x = -1.5; n.aR.elbow.rotation.x = -.2; }
+  else if (it.pose === 'guard') { n.aR.shoulder.rotation.x = -.9; n.aL.shoulder.rotation.x = -.3; }
+  else if (it.pose === 'social') { n.aR.shoulder.rotation.x = -.6 + Math.sin(now * .004) * .3; }
+  else if (it.pose === 'idle') { n.hips.position.y = .95 + Math.sin(now * .001 + n.phase) * .01; }
+}
+
+function updateNPC(n, dt, now) {
+  const p = n.body.position;
+  if (n.dead > 0) {
+    n.dead -= dt;
+    n.g.position.set(p.x, Math.max(0, p.y - .4), p.z); n.g.quaternion.copy(n.body.quaternion);
+    n.g.scale.setScalar(Math.max(.01, Math.min(1, n.dead / 3)));
+    if (n.dead <= 0) {
+      if (n.temp) { n.gone = true; return; }
+      n.health = 100; n.state = 'routine'; n.goal = null; n.ragdoll = 0; n.body.type = CANNON.Body.KINEMATIC;
+      n.body.position.copy(n.home); n.body.velocity.setZero(); n.body.quaternion.set(0, 0, 0, 1); n.g.scale.setScalar(1); n.g.quaternion.set(0, 0, 0, 1);
+    }
+    return;
+  }
+  const distP = Math.hypot(p.x - W.walkPosition.x, p.z - W.walkPosition.z);
+  n.g.visible = distP < 110;
+  if (n.temp && distP > 190 && n.alert <= 0) { n.gone = true; return; }
+  if (!n.g.visible) { // far away: no simulation, but alarms still wear off so nobody stays scared forever
+    n.body.velocity.setZero();
+    if (n.alert > 0) n.alert = Math.max(0, n.alert - dt);
+    if (n.alert <= 0 && (n.state === 'flee' || n.state === 'engage' || n.state === 'search' || n.state === 'report' || n.state === 'chase')) { n.state = n.role === 'civilian' ? 'routine' : 'post'; n.goal = null; n.arrived = false; }
+    return;
+  }
+  n.shootCd = Math.max(0, n.shootCd - dt);
+  if (n.ragdoll > 0) {
+    n.ragdoll -= dt; n.body.type = CANNON.Body.DYNAMIC; n.g.position.copy(n.body.position); n.g.quaternion.copy(n.body.quaternion);
+    if (n.ragdoll <= 0) { n.state = 'routine'; n.body.type = CANNON.Body.KINEMATIC; n.body.quaternion.set(0, 0, 0, 1); n.body.position.y = .4; }
+    return;
+  }
+  if (n.fixed) { // story NPC: stands still, turns to face the player
+    if (distP < 14) n.yaw = Math.atan2(W.walkPosition.x - p.x, W.walkPosition.z - p.z);
+    n.body.velocity.setZero(); n.g.position.set(p.x, 0, p.z); n.g.rotation.set(0, n.yaw, 0);
+    n.head.rotation.y = Math.sin(now * .0006 + n.phase) * .2; n.hips.position.y = .95 + Math.sin(now * .0015 + n.phase) * .008;
+    n.aL.shoulder.rotation.x = 0; n.aR.shoulder.rotation.x = 0; return;
+  }
+  // run-over by a fast vehicle
+  for (const v of vehicles) {
+    if (!v.active) continue;
+    const sp = v.body.velocity.length();
+    if (sp > 5 && Math.hypot(p.x - v.g.position.x, p.z - v.g.position.z) < 2.2) {
+      const dir = V3(p.x - v.g.position.x, 0, p.z - v.g.position.z).normalize();
+      hurtNPC(n, sp * 12, dir, 3, v.driver === player); return;
+    }
+  }
+  applyIntent(n, AI.think(n, dt, now), dt, now, distP);
 }
 
 // ---------------- weapons & ballistics ----------------
@@ -446,8 +416,8 @@ function fireBullet(from, dir, owner, ownVehicle = null) {
     else if (hit.type === 'player') { damagePlayer(12); }
     spark(end);
   }
-  if (owner === 'player') { gunshot = { x: from.x, z: from.z, t: nowMs }; sfx.shot(.3, 0); }
-  else sfx.shot(.22, from.distanceTo(W.walkPosition));
+  if (owner === 'player') { gunshot = { x: from.x, z: from.z, t: nowMs }; makeNoise(from.x, from.z, 60); sfx.shot(.3, 0); }
+  else { makeNoise(from.x, from.z, 30); sfx.shot(.22, from.distanceTo(W.walkPosition)); }
 }
 function raySphere(ray, c, r) { const oc = ray.origin.clone().sub(c); const b = oc.dot(ray.direction); const cc = oc.lengthSq() - r * r; const disc = b * b - cc; if (disc < 0) return null; const t = -b - Math.sqrt(disc); return t > 0 ? t : null; }
 function rayAABB(ray, minx, miny, minz, maxx, maxy, maxz) {
@@ -536,6 +506,7 @@ function flash(pos, power) {
   L.l.position.copy(pos).add(V3(0, 2, 0)); L.max = power * 5; L.dur = 1.6; L.t = 1.6;
 }
 function explode(pos, power = 20, opt = {}) {
+  makeNoise(pos.x, pos.z, 40 + power * 3);
   const R = 4 + power * .45, pp = pos.clone();
   const dPlayer = pp.distanceTo(W.walkPosition);
   // --- visuals ---
@@ -1267,6 +1238,7 @@ world.addEventListener('preStep', () => {
 let muzzle = 0;
 function update(dt, now) {
   nowMs = now; gameT += dt; reportCd = Math.max(0, reportCd - dt);
+  for (let i = noises.length - 1; i >= 0; i--) if (now - noises[i].t > 3000) noises.splice(i, 1);
   if (player.held) { const dir = V3(); camera.getWorldDirection(dir); const pos = camera.position.clone().add(dir.multiplyScalar(2)); player.held.body.position.set(pos.x, pos.y, pos.z); }
   for (const n of npcs) updateNPC(n, dt, now);
   for (const v of vehicles) {
@@ -1371,7 +1343,8 @@ function updateResponseVehicles(dt) {
       const dx = W.walkPosition.x - v.body.position.x, dz = W.walkPosition.z - v.body.position.z, d = Math.hypot(dx, dz);
       const targetYaw = Math.atan2(dx, dz); const fwd = v.body.quaternion.vmult(CV(0, 0, 1)); const curYaw = Math.atan2(fwd.x, fwd.z);
       const diff = angNorm(targetYaw - curYaw);
-      v.controls = { forward: d > 6, back: d < 4, left: diff > 0.08, right: diff < -0.08, handbrake: false };
+      // police stop about 12 m short and brake (a roadblock, not a ram)
+      const near = d < 12; v.controls = { forward: !near, back: false, left: diff > 0.08, right: diff < -0.08, handbrake: near };
     }
     if (v.ai === 'military' && v.kind === 'heli' && v.active && !v.driver) {
       if (wanted < 4 && alarm <= 0) { v.controls = {}; continue; }

@@ -15,6 +15,14 @@
 - `crtomesto/audio.js` — zvočni učinki
 - `crtomesto/assets/` — three.js, cannon-es, pisave (OFL)
 
+## AI ljudi (`crtomesto/ai.js`)
+
+- **Civilisti:** dnevne opravke med točkami zanimanja v bližini doma, postanki, klepet s sosedi. Bežijo pred oboroženim igralcem, avtomobili in hrupom (streli, eksplozije); panika se širi na sosede.
+- **Priče:** civilist, ki vidi (ali je blizu) igralčevega streljanja, prijavi policiji in s tem poveča "wanted".
+- **Straže in vojaki:** stražijo ali patrulirajo; ko zaznajo igralca, ga napadejo in opozorijo skupino v 25 m; po izgubi stika preiščejo zadnji znani položaj.
+- **Policija:** miruje do "wanted", nato lovi igralca; streljajo šele pri "wanted" 3 in več. Policijska vozila se ustavijo približno 12 m pred igralcem.
+- Oddaljeni ljudje (> 110 m) se ne simulirajo; po vrnitvi v bližino se stanje (npr. strah) sproti popravi.
+
 ## Objava
 
 Delovni tok `.github/workflows/crtomesto-pages.yml` preveri JavaScript in ob potisku na `main` objavi mapo `crtomesto/` na GitHub Pages (vir: GitHub Actions).
