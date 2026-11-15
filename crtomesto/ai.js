@@ -106,6 +106,11 @@ export function createAI(ctx) {
     }
 
     if (n.state === 'idle') { if (n.timer <= 0) { n.state = 'routine'; n.timer = 0; } return { goal: null, pose: 'idle' }; }
+    // addressed by the player: stop, face them, answer
+    if (n.state === 'talk') {
+      if (n.timer <= 0) { n.state = 'routine'; n.goal = null; return { goal: null, pose: 'idle' }; }
+      return { goal: null, face: { x: pl.x, z: pl.z }, pose: 'social' };
+    }
     if (n.state === 'social') {
       const q = n.partner && n.partner.body.position;
       if (!q || n.timer <= 0 || n.partner.dead > 0) { n.state = 'routine'; n.partner = null; n.goal = null; return { goal: null, pose: 'idle' }; }
