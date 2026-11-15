@@ -31,7 +31,7 @@ body{font-family:Georgia,'Times New Roman',serif;-webkit-font-smoothing:antialia
 #hud-wanted{position:absolute;right:24px;top:20px;font-size:20px;letter-spacing:3px;color:#b86448}
 #hud-ammo{position:absolute;right:24px;bottom:24px;font-size:15px;background:rgba(243,240,231,.7);padding:2px 8px}
 #crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:20px;color:#5a5f50;opacity:0}
-#hud.armed #crosshair{opacity:.8}
+#hud.armed #crosshair,#hud.aiming #crosshair{opacity:.8}
 #objective{position:fixed;left:24px;top:18px;z-index:22;max-width:340px;pointer-events:none;background:rgba(243,240,231,.84);border-left:2px solid #b86448;padding:8px 14px 9px;opacity:0;transition:opacity .4s}
 #objective.show{opacity:1}
 #objective b{display:block;font:italic 20px 'Instrument Serif',Georgia,serif;color:#3f4337;font-weight:400}
@@ -50,3 +50,29 @@ body{font-family:Georgia,'Times New Roman',serif;-webkit-font-smoothing:antialia
 #hint{font-family:'DM Sans',Georgia,serif}
 #death span{font-family:'Instrument Serif',Georgia,serif}
 @media (max-width:640px){#objective{max-width:60vw;font-size:12px}#dialog .txt{font-size:15px}}
+#wave-progress{position:fixed;top:112px;left:24px;z-index:23;padding:7px 12px;max-width:340px;background:rgba(243,240,231,.92);font:14px/1.4 'DM Sans',sans-serif;color:#3f4337;pointer-events:none}
+#wave-progress[hidden]{display:none}
+#touch-controls{display:none}
+@media (pointer:coarse){
+  #touch-controls{display:block;position:fixed;z-index:36;inset:0;pointer-events:none}
+  #touch-actions,#vehicle-controls{position:absolute;right:8px;bottom:48px;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:5px;max-width:min(65vw,380px);pointer-events:auto}
+  #touch-controls button{min-height:40px;padding:5px 9px;border:1px solid #8a8574;border-radius:5px;background:rgba(243,240,231,.92);color:#30332d;font:13px 'DM Sans',sans-serif;touch-action:none}
+  #touch-controls button:active{background:#ddc8b2}
+  #vehicle-controls{display:none;bottom:150px;max-width:min(72vw,400px)}
+  #touch-controls.in-vehicle #vehicle-controls{display:flex}
+  #touch-controls.in-vehicle [data-action="Space"]{display:none}
+  #dialog{bottom:200px}
+  #dialog em{font-size:0}
+  #dialog em::after{content:'Dejanje — nadaljuj';font-size:12px}
+  #hint{bottom:170px;max-width:95vw;white-space:normal;text-align:center;font-size:13px}
+  #hud-health{bottom:16px;left:8px;width:100px}
+  #hud-ammo{right:8px;bottom:12px;font-size:12px}
+}
+@media (max-width:640px){
+  #objective{left:8px;top:8px;max-width:calc(100vw - 16px);width:calc(100vw - 16px);padding:6px 10px}
+  #objective b{font-size:17px} #objective span{font-size:12px}
+  #waypoint{left:8px;top:96px;transform:none;font-size:13px}
+  #hud-wanted{top:130px;right:8px;font-size:16px;letter-spacing:1px}
+  #wave-progress{top:158px;left:8px;max-width:calc(100vw - 16px);font-size:12px}
+  #card{width:min(90vw,400px);padding:12px 18px} #card h3{font-size:30px}
+}

@@ -20,9 +20,24 @@
   </div>
   <div id="objective" aria-live="polite"><b></b><span></span></div>
   <div id="waypoint" aria-live="off"></div>
+  <div id="wave-progress" aria-live="off" hidden></div>
   <div id="card" aria-live="polite"><h3></h3><p></p></div>
   <div id="dialog" hidden><div class="who"></div><div class="txt"></div><em>E — nadaljuj</em></div>
   <div id="hint" aria-live="polite"></div>
+  <div id="touch-controls" aria-label="Upravljanje na dotik">
+    <div id="vehicle-controls" aria-label="Upravljanje vozila">
+      <button data-hold="KeyW">Naprej</button><button data-hold="KeyS">Nazaj</button>
+      <button data-hold="KeyA">Levo</button><button data-hold="KeyD">Desno</button>
+      <button data-hold="Space">Gor / zavora</button><button data-hold="ControlLeft">Dol</button>
+      <button data-hold="ShiftLeft">Plin +</button><button data-hold="KeyQ">Obrat L</button><button data-hold="KeyZ">Obrat D</button>
+    </div>
+    <div id="touch-actions">
+      <button data-action="KeyE">E · dejanje</button><button data-action="KeyF">F · orožje</button>
+      <button data-action="KeyR">R · naboj</button><button data-action="KeyG">G · granata</button>
+      <button data-action="Space">Skok</button><button data-action="KeyC">Pogled</button>
+      <button data-fire>Strel / vrzi</button>
+    </div>
+  </div>
   <div id="damage"></div>
   <div id="death"><span>svet se zbriše…</span><em>in nariše znova.</em></div>
   <script src="assets/three.min.js"></script>

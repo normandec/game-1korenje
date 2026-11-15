@@ -10,7 +10,7 @@ export const CHAPTERS = [
   { id: 'gorivo', title: 'I. Gorivo gori', goal: 'Uniči tri rezervoarje goriva v bazi Polarna zvezda (vzhod).' },
   { id: 'poveljstvo', title: 'II. Poveljstvo', goal: 'Vdri v poveljstvo baze in vzemi jantarni daljnogled.' },
   { id: 'beg', title: 'III. Beg', goal: 'Pripelji daljnogled do svetilnika. Tanki in vojaki so za tabo.' },
-  { id: 'razpoka', title: 'IV. Razpoka', goal: 'Drži daljnogled proti Razpoki, dokler se ne zapre. Vztrajaj!' },
+  { id: 'razpoka', title: 'IV. Razpoka', goal: 'Pri svetilniku z E dvigni daljnogled in glej proti Razpoki 90 sekund.' },
   { id: 'epilog', title: 'Epilog', goal: 'Mesto je tiho. Prah še vedno pada, a počasneje.' },
 ];
 

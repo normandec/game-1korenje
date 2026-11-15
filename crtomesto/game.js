@@ -5,6 +5,7 @@ import * as CANNON from './assets/cannon-es.js';
 import { sfx } from './audio.js';
 import { CHAPTERS, LINES, WAVE_TIME } from './story.js';
 import { createAI } from './ai.js';
+import { destroyedMissionFuels, nextMissionFuel, waveStatus, advanceWave } from './story-logic.js';
 
 const W = window.__pencilWorld;
 if (!W) throw new Error('world missing');
@@ -953,7 +954,7 @@ function buildBase(x, z, rot = 0) {
   // fuel depot: three separately destructible tanks
   for (let i = 0; i < 3; i++) {
     const p = off(40 + i * 7, 40);
-    fuels.push({ x: p[0], z: p[1], hp: 100, dead: false, g: fuelTankMesh(p[0], p[1]), owner: null });
+    fuels.push({ x: p[0], z: p[1], hp: 100, dead: false, g: fuelTankMesh(p[0], p[1]), baseIndex: bases.length });
     staticBox(p[0], 2.5, p[1], 3, 2.5, 3); W.obstacles.push({ x: p[0], z: p[1], w: 6, d: 6 });
   }
   // guards patrol
@@ -1008,7 +1009,7 @@ function damagePlayer(amt) {
   if (player.health <= 0) { player.health = 0; killPlayer(); }
 }
 function killPlayer() {
-  player.dead = true; player.respawn = 2.6; deathEl.classList.add('show');
+  player.dead = true; player.respawn = 2.6; glassRaised = false; deathEl.classList.add('show');
   if (player.vehicle) exitVehicle(true);
   W.control.enabled = false; player.held = null;
   for (const v of vehicles) if (v.g.position.distanceTo(W.walkPosition) < 8 && v.body) { v.body.velocity.scale(.1, v.body.velocity); v.body.angularVelocity.scale(.1, v.body.angularVelocity); }
@@ -1031,6 +1032,7 @@ function hudUpdate() {
     : player.armed ? (player.reload > 0 ? '…' : player.ammo + ' / 30') : '';
   document.getElementById('hud-ammo').textContent = (weapon ? weapon + '   ' : '') + (player.vehicle ? '' : 'granate ' + player.grenades + ' (G)');
   hud.classList.toggle('armed', player.armed && !player.vehicle);
+  hud.classList.toggle('aiming', chIdx === 4 && glassRaised && !player.dead && !player.vehicle);
 }
 hudWanted();
 
@@ -1071,9 +1073,11 @@ function card(title, sub = '', dur = 4.5) {
   cardEl.classList.add('show'); cardT = dur;
 }
 let cardT = 0;
-let chIdx = -1, storyBusy = false, waveT = 0, rift = null, fuelDestroyed = 0, armyTankT = 4, squadT = 6, artT = 6;
+let chIdx = -1, storyBusy = false, waveT = 0, rift = null, glassRaised = false, armyTankT = 4, squadT = 6, artT = 6;
+const waveEl = document.getElementById('wave-progress');
 function setChapter(i) {
   chIdx = i; const c = CHAPTERS[i];
+  waveEl.hidden = i !== 4;
   objEl.querySelector('b').textContent = c.title; objEl.querySelector('span').textContent = c.goal;
   objEl.classList.add('show');
   if (i > 0) card(c.title, c.goal, 4.5);
@@ -1081,7 +1085,7 @@ function setChapter(i) {
 function damageFuel(f, dmg, owner, delay = 0) {
   if (f.dead) return;
   f.hp -= dmg; if (f.hp > 0) return;
-  f.dead = true; f.g.visible = false; if (chIdx === 1) fuelDestroyed++;
+  f.dead = true; f.g.visible = false;
   if (!alarm) alarm = 120;
   const pos = V3(f.x, 2, f.z);
   if (delay > 0) later(delay, () => boom(pos, 40, { owner: null })); else boom(pos, 40, { owner: null });
@@ -1103,7 +1107,7 @@ function buildRift() {
 function removeRift() { if (!rift) return; scene.remove(rift.grp); rift.grp.children.forEach(c => c.geometry.dispose()); rift.mats.forEach(m => m.dispose()); rift = null; }
 function currentWaypoint() {
   if (chIdx === 0) return { x: mihec.body.position.x, z: mihec.body.position.z, label: 'Mihec' };
-  if (chIdx === 1) { const live = fuels.filter(f => !f.dead); if (!live.length) return null; let best = live[0], bd = Infinity; for (const f of live) { const d = W.walkPosition.distanceTo(V3(f.x, 0, f.z)); if (d < bd) { bd = d; best = f; } } return { x: best.x, z: best.z, label: 'Rezervoar' }; }
+  if (chIdx === 1) { const best = nextMissionFuel(fuels, W.walkPosition); return best ? { x: best.x, z: best.z, label: 'Rezervoar' } : null; }
   if (chIdx === 2 && !player.hasGlass) return { x: bases[0].hq.x, z: bases[0].hq.z, label: 'Poveljstvo' };
   if (chIdx === 3 || chIdx === 4) return { x: LIGHT.x, z: LIGHT.z, label: 'Svetilnik' };
   return null;
@@ -1120,9 +1124,10 @@ function updateWaypointHUD() {
 }
 function updateStory(dt) {
   if (cardT > 0) { cardT -= dt; if (cardT <= 0) cardEl.classList.remove('show'); }
+  if (player.dead) return;
   if (chIdx < 0) { if (gameT > 3.2) { setChapter(0); say(LINES.intro); } return; }
   const pos = W.walkPosition;
-  if (chIdx === 1 && fuelDestroyed >= 3 && !storyBusy) {
+  if (chIdx === 1 && destroyedMissionFuels(fuels) === 3 && !storyBusy) {
     storyBusy = true;
     say(LINES.fuelDone, () => { storyBusy = false; alarm = 120; raiseWanted(3); setChapter(2); });
   }
@@ -1132,7 +1137,12 @@ function updateStory(dt) {
   }
   if (chIdx === 4) {
     alarm = Math.max(alarm, 5);
-    waveT -= dt;
+    const target = V3(LIGHT.x, 55, -150).sub(W.walkPosition).normalize();
+    const facing = V3(Math.sin(W.walkYaw) * Math.cos(W.walkPitch), Math.sin(W.walkPitch), Math.cos(W.walkYaw) * Math.cos(W.walkPitch));
+    const status = waveStatus({ dead: player.dead, inVehicle: !!player.vehicle, raised: glassRaised, distance: Math.hypot(pos.x - LIGHT.x, pos.z - LIGHT.z), alignment: facing.dot(target) });
+    if (!storyBusy) waveT = advanceWave(waveT, dt, status);
+    const instructions = { location: 'Vrni se peš k svetilniku.', raise: 'E — dvigni daljnogled.', aim: 'Usmeri pogled proti razpoki na nebu.', active: 'Drži pogled na razpoki.' };
+    waveEl.textContent = `${instructions[status] || ''} ${Math.ceil(WAVE_TIME - waveT)} / ${WAVE_TIME} s`;
     if (rift) { const k = 1 + .03 * Math.sin(nowMs * .003); rift.grp.scale.set(k, k, 1); }
     if (waveT <= 0 && !storyBusy) {
       storyBusy = true;
@@ -1143,6 +1153,7 @@ function updateStory(dt) {
 // Interaction with story objects (returns true if handled)
 function storyInteract() {
   if (dlg.cur) { advanceDialog(); return true; }
+  if (chIdx === 4 && !storyBusy && !player.vehicle) { glassRaised = !glassRaised; return true; }
   const pos = W.walkPosition;
   if (chIdx === 0 && Math.hypot(pos.x - mihec.body.position.x, pos.z - mihec.body.position.z) < 4 && !storyBusy) {
     storyBusy = true; say(LINES.mihec, () => { storyBusy = false; setChapter(1); }); return true;
@@ -1314,7 +1325,7 @@ function update(dt, now) {
   for (let i = npcs.length - 1; i >= 0; i--) { if (npcs[i].gone) removeNPC(npcs[i]); }
   for (let i = vehicles.length - 1; i >= 0; i--) { const v = vehicles[i]; if (!v.active && v.wreckT > 60 && v.g.position.distanceTo(W.walkPosition) > 160 && !v.driver) removeVehicle(v); }
   // story
-  updateStory(dt); updateStoryObjects(now); updateDialog(dt); updateRis(dt, now);
+  updateStory(dt); updateStoryObjects(now); if (!player.dead) updateDialog(dt); updateRis(dt, now);
   if (!player.vehicle && !player.held && !player.dead && !dlg.cur) {
     const t = nearestTarget();
     if (t && hintTimer <= 0) showHint(t.label, .2); // don't overwrite a dialogue line or other message
@@ -1322,7 +1333,7 @@ function update(dt, now) {
   gunG.visible = player.armed && !player.vehicle && !player.dead;
   if (hintTimer > 0) { hintTimer -= dt; if (hintTimer <= 0) hintEl.classList.remove('show'); }
   damageFlash = Math.max(0, damageFlash - dt * .8); damageEl.style.opacity = damageFlash;
-  hudUpdate(); updateCamera(dt); updateWaypointHUD();
+  hudUpdate(); document.getElementById('touch-controls').classList.toggle('in-vehicle', !!player.vehicle); updateCamera(dt); updateWaypointHUD();
   // screen shake on top of the camera rig
   if (shake > .001) { camera.position.x += rand(-1, 1) * shake * .35; camera.position.y += rand(-1, 1) * shake * .25; camera.position.z += rand(-1, 1) * shake * .35; shake *= Math.exp(-dt * 3.2); }
   pressed.clear();
@@ -1335,7 +1346,7 @@ function updateFX(dt) {
 }
 const pressed = new Set();
 window.addEventListener('keydown', e => { if (!e.repeat) pressed.add(e.code); sfx.unlock(); });
-window.addEventListener('mousedown', e => { sfx.unlock(); if (e.button !== 0) return; if (player.held) { throwHeld(); return; } if (player.armed || player.vehicle) shoot(); });
+window.addEventListener('mousedown', e => { sfx.unlock(); if (e.button !== 0 || player.dead) return; if (player.held) { throwHeld(); return; } if (player.armed || player.vehicle) shoot(); });
 function updateResponseVehicles(dt) {
   for (const v of vehicles) {
     if (v.ai === 'police' && v.active && !v.driver) {
@@ -1478,6 +1489,35 @@ function interact() {
 }
 const camPos = V3(), camLook = V3();
 
+// Touch controls use the same input paths as the keyboard. Holding vehicle
+// controls ends on pointerup/cancel so a lost touch cannot leave a key stuck.
+const touchControls = document.getElementById('touch-controls');
+touchControls.addEventListener('mousedown', e => e.stopPropagation());
+for (const button of touchControls.querySelectorAll('button')) {
+  button.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation(); sfx.unlock();
+    if (player.dead) return;
+    if (button.dataset.hold) {
+      W.keys.add(button.dataset.hold);
+      button.setPointerCapture(e.pointerId);
+    } else if (button.dataset.action) pressed.add(button.dataset.action);
+    else if (button.hasAttribute('data-fire')) {
+      if (player.held) throwHeld(); else if (player.armed || player.vehicle) shoot();
+    }
+  });
+  const release = () => { if (button.dataset.hold) W.keys.delete(button.dataset.hold); };
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+  button.addEventListener('lostpointercapture', release);
+  // Keyboard activation for users navigating the buttons without a pointer.
+  button.addEventListener('click', e => {
+    if (e.detail !== 0 || player.dead) return;
+    sfx.unlock();
+    if (button.dataset.action) pressed.add(button.dataset.action);
+    else if (button.hasAttribute('data-fire')) { if (player.held) throwHeld(); else shoot(); }
+  });
+}
+
 // ---------------- kick off ----------------
 // Story start: the intro dialogue begins once the landing animation has finished (see updateStory).
 window.__pencilGame = {
@@ -1487,7 +1527,7 @@ window.__pencilGame = {
   spawnTank: (x, z) => createTank(x, z, 0, 'military'),
   explode: (x, y, z, p = 20) => boom(V3(x, y, z), p, { owner: 'player' }),
   get health() { return player.health; }, get wanted() { return wanted; },
-  get alarm() { return alarm; }, get chapter() { return chIdx; }, get fuelDestroyed() { return fuelDestroyed; },
+  get alarm() { return alarm; }, get chapter() { return chIdx; }, get fuelDestroyed() { return destroyedMissionFuels(fuels); }, get waveRemaining() { return waveT; },
   setWanted: n => { wanted = clamp(n, 0, 5); wantedDecay = 0; responseTimer = 0; hudWanted(); },
   setChapter: i => setChapter(i),
 };
