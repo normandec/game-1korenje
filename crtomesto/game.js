@@ -398,14 +398,14 @@ function policeAI(n, dt, now, distP) {
 const bullets = [];
 const tracerBase = new THREE.LineBasicMaterial({ color: 0xb86448, transparent: true, opacity: .9 });
 const fuels = [];                   // fuel tanks in the military bases (destructible)
-function fireBullet(from, dir, owner) {
+function fireBullet(from, dir, owner, ownVehicle = null) {
   const range = owner === 'npc' ? 60 : 140;
   let hit = null, hitDist = range;
   const ray = new THREE.Ray(from, dir);
   const blockT = bulletBlock(ray, range);
   if (blockT < hitDist) { hitDist = blockT; hit = { type: 'wall' }; }
   for (const n of npcs) { if (n.dead > 0 || n.ragdoll > 0) continue; const c = n.g.position.clone().add(V3(0, 1, 0)); const t = raySphere(ray, c, .5); if (t !== null && t < hitDist) { hitDist = t; hit = { type: 'npc', n }; } }
-  for (const v of vehicles) { if (!v.active) continue; const t = raySphere(ray, v.g.position.clone().add(V3(0, 1, 0)), v.kind === 'tank' ? 2.8 : 2.2); if (t !== null && t < hitDist) { hitDist = t; hit = { type: 'vehicle', v }; } }
+  for (const v of vehicles) { if (!v.active || v === ownVehicle) continue; const t = raySphere(ray, v.g.position.clone().add(V3(0, 1, 0)), v.kind === 'tank' ? 2.8 : 2.2); if (t !== null && t < hitDist) { hitDist = t; hit = { type: 'vehicle', v }; } }
   for (const f of fuels) { if (f.dead) continue; const t = raySphere(ray, V3(f.x, 2.5, f.z), 3); if (t !== null && t < hitDist) { hitDist = t; hit = { type: 'fuel', f }; } }
   if (owner !== 'player') { const t = raySphere(ray, W.walkPosition.clone(), .5); if (t !== null && t < hitDist) { hitDist = t; hit = { type: 'player' }; } }
   const end = from.clone().add(dir.clone().multiplyScalar(hitDist));
@@ -1353,7 +1353,7 @@ function updateResponseVehicles(dt) {
       const fwd = v.body.quaternion.vmult(CV(0, 0, 1)); const curYaw = Math.atan2(fwd.x, fwd.z); const targetYaw = Math.atan2(dx, dz);
       const diff = angNorm(targetYaw - curYaw);
       v.controls = { up: v.body.position.y < 25, down: false, forward: d > 15, back: false, left: false, right: false, yawL: diff > 0.05, yawR: diff < -0.05 };
-      if (d < 40 && v.gunCd <= 0) { v.gunCd = .3; const from = v.g.position.clone(); const dir = V3(W.walkPosition.x, W.walkPosition.y, W.walkPosition.z).sub(from).normalize(); fireBullet(from, dir, 'npc'); }
+      if (d < 40 && v.gunCd <= 0) { v.gunCd = .3; const from = v.g.position.clone(); const dir = V3(W.walkPosition.x, W.walkPosition.y, W.walkPosition.z).sub(from).normalize(); fireBullet(from, dir, 'npc', v); }
     }
     if (v.kind === 'tank' && v.active && !v.driver && v.ai === 'military') {
       const hostile = alarm > 0 || wanted >= 3;
@@ -1437,11 +1437,11 @@ function shoot() {
     if (v.kind !== 'heli' && v.kind !== 'plane') return;
     if (v.gunCd > 0) return; v.gunCd = .12;
     const fwd = V3(0, 0, 1).applyQuaternion(v.g.quaternion); const from = v.g.position.clone().add(fwd.clone().multiplyScalar(3));
-    fireBullet(from, fwd, 'player'); return;
+    fireBullet(from, fwd, 'player', v); return;
   }
   if (!player.armed || player.reload > 0 || player.ammo <= 0) return;
   player.ammo--; const dir = V3(); camera.getWorldDirection(dir); dir.x += rand(-.01, .01); dir.y += rand(-.01, .01); dir.normalize();
-  fireBullet(camera.position.clone(), dir, 'player');
+  fireBullet(camera.position.clone(), dir, 'player', player.vehicle);
   W.walkPitch = clamp(W.walkPitch + .015, -1.12, 1.2);
   if (player.ammo <= 0) player.reload = 1.4;
 }
